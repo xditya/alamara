@@ -1,0 +1,232 @@
+import { useLocalSearchParams } from 'expo-router';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { CATEGORY_ICON } from '@/components/documents/document-card';
+import { FieldRow } from '@/components/documents/field-row';
+import { PressableScale } from '@/components/pressable-scale';
+import { Button } from '@/components/ui/button';
+import { Chip } from '@/components/ui/chip';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Icon } from '@/components/ui/icon';
+import { AppText } from '@/components/ui/text';
+import { useToast } from '@/components/ui/toast';
+import { Durations, StaggerMs } from '@/constants/motion';
+import { CardShadow, CategoryColors, Radius, Spacing } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useDocument } from '@/hooks/use-documents';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { useTheme } from '@/hooks/use-theme';
+import { back } from '@/lib/nav';
+import * as db from '@/services/db';
+import { CATEGORY_LABELS } from '@/types/models';
+
+export default function DocumentDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const theme = useTheme();
+  const toast = useToast();
+  const reduced = useReducedMotion();
+  const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const { document, loading } = useDocument(id);
+
+  const enter = (i: number) => (reduced ? FadeIn : FadeInDown).duration(Durations.enter).delay(i * StaggerMs);
+
+  const BackButton = (
+    <PressableScale
+      onPress={back}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+      style={[styles.iconBtn, { backgroundColor: theme.surface, borderColor: theme.border }, CardShadow[scheme]]}
+    >
+      <Icon name="chevronLeft" size={22} color="text" />
+    </PressableScale>
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView edges={['top']} style={[styles.safe, styles.center, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator color={theme.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!document) {
+    return (
+      <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.bg }]}>
+        <View style={styles.topBar}>{BackButton}</View>
+        <View style={styles.center}>
+          <EmptyState
+            icon="alert"
+            title="Document not found"
+            message="This document may have been deleted."
+            actionLabel="Go back"
+            onAction={back}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const c = CategoryColors[scheme][document.category];
+  const label = CATEGORY_LABELS[document.category];
+
+  const onShare = () => {
+    // TODO(device): expo-sharing / share sheet
+    toast.show('Sharing…');
+  };
+  const onEdit = () => {
+    // TODO(device): open editable review flow
+    toast.show('Edit coming soon');
+  };
+  const onAddPage = () => {
+    // TODO(device): expo-image-picker / camera to append a page
+    toast.show('Add a page');
+  };
+  const onDelete = async () => {
+    await db.deleteDocument(document.id);
+    toast.show('Deleted');
+    back();
+  };
+
+  return (
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.bg }]}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.topBar}>{BackButton}</View>
+
+        {/* Category-tinted header */}
+        <Animated.View entering={enter(0)} style={[styles.headerCard, { backgroundColor: c.tint }]}>
+          <View style={[styles.headerIcon, { backgroundColor: theme.surface }]}>
+            <Icon name={CATEGORY_ICON[document.category]} size={26} color={c.fg} />
+          </View>
+          <AppText variant="label" style={{ color: c.fg }}>
+            {label.toUpperCase()}
+          </AppText>
+          <AppText variant="title" style={[styles.headerName, { color: theme.text }]}>
+            {document.name}
+          </AppText>
+        </Animated.View>
+
+        {/* Pages */}
+        <Animated.View entering={enter(1)}>
+          <AppText variant="section" style={styles.sectionTitle}>
+            {document.pages.length} {document.pages.length === 1 ? 'Page' : 'Pages'}
+          </AppText>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pagesRow}
+          >
+            {document.pages.map((page) => (
+              <View key={page.id} style={[styles.pageTile, { backgroundColor: c.tint, borderColor: theme.border }]}>
+                <Icon name="file" size={30} color={c.fg} />
+                {page.side ? (
+                  <AppText variant="caption" style={[styles.pageSide, { color: c.fg }]}>
+                    {page.side === 'front' ? 'Front' : 'Back'}
+                  </AppText>
+                ) : null}
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+
+        {/* Fields */}
+        {document.fields.length > 0 ? (
+          <Animated.View entering={enter(2)}>
+            <AppText variant="section" style={styles.sectionTitle}>
+              Details
+            </AppText>
+            <View style={[styles.fieldCard, { backgroundColor: theme.surface, borderColor: theme.border }, CardShadow[scheme]]}>
+              {document.fields.map((field, i) => (
+                <View key={field.key}>
+                  {i > 0 ? <View style={[styles.divider, { backgroundColor: theme.border }]} /> : null}
+                  <FieldRow field={field} />
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {/* Tags */}
+        {document.tags.length > 0 ? (
+          <Animated.View entering={enter(3)}>
+            <AppText variant="section" style={styles.sectionTitle}>
+              Tags
+            </AppText>
+            <View style={styles.tagsRow}>
+              {document.tags.map((tag) => (
+                <Chip key={tag} label={tag} icon="tag" />
+              ))}
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {/* Actions */}
+        <Animated.View entering={enter(4)} style={styles.actions}>
+          <View style={styles.actionRow}>
+            <View style={styles.actionItem}>
+              <Button title="Share" icon="share" variant="secondary" onPress={onShare} />
+            </View>
+            <View style={styles.actionItem}>
+              <Button title="Edit" icon="edit" variant="secondary" onPress={onEdit} />
+            </View>
+          </View>
+          <Button title="Add page" icon="plus" variant="ghost" onPress={onAddPage} />
+          <Button title="Delete document" icon="trash" variant="danger" onPress={onDelete} />
+        </Animated.View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 120 },
+  topBar: { paddingTop: Spacing.sm, paddingBottom: Spacing.md },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCard: {
+    borderRadius: Radius.card,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  headerIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.input,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
+  },
+  headerName: { marginTop: 2 },
+  sectionTitle: { marginTop: Spacing.xl, marginBottom: Spacing.md },
+  pagesRow: { gap: Spacing.md, paddingRight: Spacing.lg },
+  pageTile: {
+    width: 128,
+    height: 160,
+    borderRadius: Radius.card,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  pageSide: { fontSize: 12 },
+  fieldCard: {
+    borderRadius: Radius.card,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.xs,
+  },
+  divider: { height: 1, marginHorizontal: -Spacing.base },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  actions: { marginTop: Spacing.xl, gap: Spacing.md },
+  actionRow: { flexDirection: 'row', gap: Spacing.md },
+  actionItem: { flex: 1 },
+});

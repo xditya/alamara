@@ -41,3 +41,8 @@ example
 # generated native folders
 /ios
 /android
+
+# agent coordination / reference docs (not part of the shipped app)
+docs/
+dist-check/
+dist-web-check/
