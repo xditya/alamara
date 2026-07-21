@@ -33,11 +33,26 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Alamara needs access to your photos to import documents.",
+          "cameraPermission": "Alamara uses the camera to scan documents."
+        }
+      ],
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7e9e181f-eeff-44e2-9bfd-d4cd1ee44be5"
+      }
     }
   }
 }

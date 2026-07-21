@@ -1,8 +1,11 @@
 /**
- * Capture chooser — presented as a modal card. Three sources funnel into one
- * pipeline: live scan (→ /scan) or import from Files/Photos (simulated → /review).
+ * Capture chooser — presented as a modal card. Three real sources funnel into one
+ * pipeline: camera scan, import from Photos, or import from Files. The picked file
+ * is handed to the Review screen, which persists it into the vault.
  */
 
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,41 +18,68 @@ import { Durations, StaggerMs } from '@/constants/motion';
 import { Radius, Spacing } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
-import { back, go } from '@/lib/nav';
+import { back, replaceWith } from '@/lib/nav';
 
 export default function CaptureScreen() {
   const theme = useTheme();
   const toast = useToast();
   const reduced = useReducedMotion();
 
-  // Imports use native pickers on device; here we simulate then hand off to Review.
-  // TODO(device): expo-document-picker (Files) / expo-image-picker (Photos)
-  const simulateImport = (source: string) => {
-    toast.show(`Importing from ${source}…`);
-    go('/review');
+  // Hand the picked file(s) to Review (replace so closing Review returns to the tab).
+  const toReview = (uris: string[], source: string) => {
+    if (uris.length === 0) return;
+    replaceWith('/review', { uris: JSON.stringify(uris), source });
+  };
+
+  const scan = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      toast.show('Camera access is needed to scan');
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+    if (!res.canceled) toReview(res.assets.map((a) => a.uri), 'Camera');
+  };
+
+  const fromPhotos = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.85,
+    });
+    if (!res.canceled) toReview(res.assets.map((a) => a.uri), 'Photos');
+  };
+
+  const fromFiles = async () => {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: ['image/*', 'application/pdf'],
+      copyToCacheDirectory: true,
+      multiple: true,
+    });
+    if (!res.canceled && res.assets) toReview(res.assets.map((a) => a.uri), 'Files');
   };
 
   const options = [
     {
       icon: 'camera' as const,
       title: 'Scan a document',
-      subtitle: 'Use the camera to capture pages',
+      subtitle: 'Use the camera to capture a page',
       category: 'id' as const,
-      onPress: () => go('/scan'),
+      onPress: scan,
     },
     {
       icon: 'folder' as const,
       title: 'Import from Files',
       subtitle: 'Pick a PDF or image from your files',
       category: 'pan' as const,
-      onPress: () => simulateImport('Files'),
+      onPress: fromFiles,
     },
     {
       icon: 'image' as const,
       title: 'Import from Photos',
-      subtitle: 'Choose an existing photo',
+      subtitle: 'Choose one or more existing photos',
       category: 'ticket' as const,
-      onPress: () => simulateImport('Photos'),
+      onPress: fromPhotos,
     },
   ];
 

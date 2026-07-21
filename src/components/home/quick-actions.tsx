@@ -12,7 +12,7 @@ import { go } from '@/lib/nav';
 type Action = { key: string; label: string; icon: IconName; route: string; tint: DocCategory };
 
 const ACTIONS: Action[] = [
-  { key: 'scan', label: 'Scan', icon: 'scan', route: '/scan', tint: 'id' },
+  { key: 'scan', label: 'Scan', icon: 'scan', route: '/capture', tint: 'id' },
   { key: 'import', label: 'Import', icon: 'download', route: '/capture', tint: 'pan' },
   { key: 'recent', label: 'Recent', icon: 'clock', route: '/documents', tint: 'certificate' },
 ];

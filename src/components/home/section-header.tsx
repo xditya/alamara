@@ -5,7 +5,6 @@ import { StyleSheet, View } from 'react-native';
 import { PressableScale } from '@/components/pressable-scale';
 import { Icon } from '@/components/ui/icon';
 import { AppText } from '@/components/ui/text';
-import { Spacing } from '@/constants/theme';
 
 export function SectionHeader({
   title,

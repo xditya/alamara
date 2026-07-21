@@ -7,7 +7,6 @@ import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { FloatingCaptureButton } from '@/components/floating-capture-button';
 import { ToastProvider } from '@/components/ui/toast';
 import { FontAssets } from '@/constants/fonts';
 import { replace } from '@/lib/nav';
@@ -48,7 +47,6 @@ export default function RootLayout() {
               <Stack.Screen name="lock" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
               <Stack.Screen name="onboarding" options={{ presentation: 'fullScreenModal' }} />
             </Stack>
-            <FloatingCaptureButton />
             <StatusBar style="auto" />
           </ToastProvider>
         </ThemeProvider>

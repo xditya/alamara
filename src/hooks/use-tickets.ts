@@ -1,3 +1,4 @@
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import * as db from '@/services/db';
@@ -15,9 +16,8 @@ export function useTickets() {
     });
   }, []);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  // Re-read on every focus so freshly-saved tickets appear when returning to the tab.
+  useFocusEffect(refresh);
 
   const upcoming = useMemo(
     () => tickets.filter((t) => t.status === 'upcoming').sort((a, b) => a.eventAt - b.eventAt),

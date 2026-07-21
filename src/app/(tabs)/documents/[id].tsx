@@ -1,5 +1,8 @@
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,7 +21,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDocument } from '@/hooks/use-documents';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
-import { back } from '@/lib/nav';
+import { back, goWith } from '@/lib/nav';
 import * as db from '@/services/db';
 import { CATEGORY_LABELS } from '@/types/models';
 
@@ -28,7 +31,7 @@ export default function DocumentDetail() {
   const toast = useToast();
   const reduced = useReducedMotion();
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
-  const { document, loading } = useDocument(id);
+  const { document, loading, refresh } = useDocument(id);
 
   const enter = (i: number) => (reduced ? FadeIn : FadeInDown).duration(Durations.enter).delay(i * StaggerMs);
 
@@ -71,18 +74,39 @@ export default function DocumentDetail() {
   const c = CategoryColors[scheme][document.category];
   const label = CATEGORY_LABELS[document.category];
 
-  const onShare = () => {
-    // TODO(device): expo-sharing / share sheet
-    toast.show('Sharing…');
+  const onShare = async () => {
+    const page = document.pages.find((p) => p.uri);
+    try {
+      if (page?.uri && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(page.uri);
+      } else {
+        // No file to share (e.g. a details-only doc) — share the fields as text.
+        const text = [document.name, ...document.fields.map((f) => `${f.label}: ${f.value}`)].join('\n');
+        await Share.share({ message: text });
+      }
+    } catch {
+      toast.show('Could not share');
+    }
   };
-  const onEdit = () => {
-    // TODO(device): open editable review flow
-    toast.show('Edit coming soon');
+
+  const onEdit = () => goWith('/review', { editId: document.id });
+
+  const onAddPage = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.85,
+    });
+    if (res.canceled) return;
+    const now = Date.now();
+    const stored = await db.persistPages(`${document.id}-add${now}`, res.assets.map((a) => a.uri));
+    const start = document.pages.length;
+    const newPages = stored.map((uri, i) => ({ id: `${document.id}-p${start + i}`, uri }));
+    await db.saveDocument({ ...document, pages: [...document.pages, ...newPages], updatedAt: now });
+    toast.show(newPages.length > 1 ? 'Pages added' : 'Page added');
+    refresh();
   };
-  const onAddPage = () => {
-    // TODO(device): expo-image-picker / camera to append a page
-    toast.show('Add a page');
-  };
+
   const onDelete = async () => {
     await db.deleteDocument(document.id);
     toast.show('Deleted');
@@ -117,16 +141,34 @@ export default function DocumentDetail() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.pagesRow}
           >
-            {document.pages.map((page) => (
-              <View key={page.id} style={[styles.pageTile, { backgroundColor: c.tint, borderColor: theme.border }]}>
-                <Icon name="file" size={30} color={c.fg} />
-                {page.side ? (
-                  <AppText variant="caption" style={[styles.pageSide, { color: c.fg }]}>
-                    {page.side === 'front' ? 'Front' : 'Back'}
-                  </AppText>
-                ) : null}
-              </View>
-            ))}
+            {document.pages.map((page, i) => {
+              const isImage = !!page.uri && !page.uri.toLowerCase().endsWith('.pdf');
+              return (
+                <PressableScale
+                  key={page.id}
+                  onPress={() =>
+                    goWith('/page-viewer', {
+                      uri: page.uri,
+                      name: document.name,
+                      page: String(i + 1),
+                      category: document.category,
+                    })
+                  }
+                  style={[styles.pageTile, { backgroundColor: c.tint, borderColor: theme.border }]}
+                >
+                  {isImage ? (
+                    <Image source={{ uri: page.uri }} style={styles.pageImage} contentFit="cover" transition={150} />
+                  ) : (
+                    <Icon name="file" size={30} color={c.fg} />
+                  )}
+                  {page.side ? (
+                    <AppText variant="caption" style={[styles.pageSide, { color: c.fg }]}>
+                      {page.side === 'front' ? 'Front' : 'Back'}
+                    </AppText>
+                  ) : null}
+                </PressableScale>
+              );
+            })}
           </ScrollView>
         </Animated.View>
 
@@ -216,8 +258,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
+    overflow: 'hidden',
   },
-  pageSide: { fontSize: 12 },
+  pageImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
+  pageSide: {
+    fontSize: 12,
+    position: 'absolute',
+    bottom: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
   fieldCard: {
     borderRadius: Radius.card,
     borderWidth: 1,

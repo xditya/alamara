@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
 import { Icon, type IconName } from '@/components/ui/icon';
@@ -46,9 +47,15 @@ export function DocumentCard({
   const pages = document.pages.length;
   const meta = `${pages} ${pages === 1 ? 'page' : 'pages'} · ${relativeDate(document.updatedAt)}`;
 
+  const thumbUri = document.pages.find((p) => p.uri && !p.uri.toLowerCase().endsWith('.pdf'))?.uri;
+
   const iconChip = (
     <View style={[styles.iconChip, { backgroundColor: c.tint }]}>
-      <Icon name={CATEGORY_ICON[document.category]} size={20} color={c.fg} />
+      {thumbUri ? (
+        <Image source={{ uri: thumbUri }} style={styles.thumb} contentFit="cover" transition={120} />
+      ) : (
+        <Icon name={CATEGORY_ICON[document.category]} size={20} color={c.fg} />
+      )}
     </View>
   );
 
@@ -110,7 +117,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.input,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  thumb: { width: '100%', height: '100%' },
   // list
   listRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   listBody: { flex: 1, gap: 4 },

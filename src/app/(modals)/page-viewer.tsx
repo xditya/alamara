@@ -6,6 +6,7 @@
  * TODO(device): services/crypto.decryptToCache() → <Image> of the real page.
  */
 
+import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -30,13 +31,15 @@ export default function PageViewerScreen() {
   const toast = useToast();
   const reduced = useReducedMotion();
 
-  const params = useLocalSearchParams<{ category?: string; name?: string; page?: string }>();
+  const params = useLocalSearchParams<{ category?: string; name?: string; page?: string; uri?: string }>();
   const category: DocCategory = CATEGORIES.includes(params.category as DocCategory)
     ? (params.category as DocCategory)
     : 'other';
   const title = params.name ?? 'Document';
   const pageLabel = params.page ? `Page ${params.page}` : 'Page 1';
   const cat = CategoryColors[scheme][category];
+  const uri = params.uri;
+  const isImage = !!uri && !uri.toLowerCase().endsWith('.pdf');
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgGrouped }]} edges={['top', 'bottom']}>
@@ -62,22 +65,31 @@ export default function PageViewerScreen() {
         </PressableScale>
       </View>
 
-      {/* Placeholder page */}
+      {/* Page image, or a placeholder when there's nothing to show (e.g. a PDF). */}
       <View style={styles.body}>
-        <Animated.View
-          entering={reduced ? FadeIn.duration(Durations.enter) : FadeIn.duration(Durations.page)}
-          style={[styles.page, { backgroundColor: cat.tint, borderColor: theme.border }]}
-        >
-          <View style={[styles.pageIcon, { backgroundColor: theme.surface }]}>
-            <Icon name="file" size={40} color={cat.fg} />
-          </View>
-          <AppText variant="body" style={{ color: cat.fg }}>
-            {title}
-          </AppText>
-          <AppText variant="caption" color="textSecondary" style={styles.pageNote}>
-            Preview opens on a device build
-          </AppText>
-        </Animated.View>
+        {isImage ? (
+          <Animated.View
+            entering={reduced ? FadeIn.duration(Durations.enter) : FadeIn.duration(Durations.page)}
+            style={styles.imageWrap}
+          >
+            <Image source={{ uri }} style={styles.image} contentFit="contain" transition={150} />
+          </Animated.View>
+        ) : (
+          <Animated.View
+            entering={reduced ? FadeIn.duration(Durations.enter) : FadeIn.duration(Durations.page)}
+            style={[styles.page, { backgroundColor: cat.tint, borderColor: theme.border }]}
+          >
+            <View style={[styles.pageIcon, { backgroundColor: theme.surface }]}>
+              <Icon name="file" size={40} color={cat.fg} />
+            </View>
+            <AppText variant="body" style={{ color: cat.fg }}>
+              {title}
+            </AppText>
+            <AppText variant="caption" color="textSecondary" style={styles.pageNote}>
+              {uri ? 'PDF preview opens on a device build' : 'No image for this page'}
+            </AppText>
+          </Animated.View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -101,6 +113,8 @@ const styles = StyleSheet.create({
   },
   barTitle: { flex: 1 },
   body: { flex: 1, padding: Spacing.lg, alignItems: 'center', justifyContent: 'center' },
+  imageWrap: { width: '100%', height: '100%' },
+  image: { width: '100%', height: '100%' },
   page: {
     width: '100%',
     aspectRatio: 0.7,
