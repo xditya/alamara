@@ -19,7 +19,9 @@ import { Spacing } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
 import { back } from '@/lib/nav';
-import { searchDocuments } from '@/services/db';
+import { usePreferences } from '@/lib/theme-store';
+import { isEmbedderReady, semanticSearch } from '@/services/ai';
+import { listDocuments, searchDocuments } from '@/services/db';
 import { CATEGORY_LABELS, type DocCategory, type Document } from '@/types/models';
 
 const DEBOUNCE_MS = 200;
@@ -28,10 +30,13 @@ export default function SearchModal() {
   const theme = useTheme();
   const reduced = useReducedMotion();
 
+  const { aiEnabled } = usePreferences();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCat, setActiveCat] = useState<DocCategory | null>(null);
+
+  const semantic = aiEnabled && isEmbedderReady();
 
   useEffect(() => {
     const q = query.trim();
@@ -41,14 +46,31 @@ export default function SearchModal() {
       return;
     }
     setLoading(true);
-    const timer = setTimeout(() => {
-      searchDocuments(q).then((docs) => {
-        setResults(docs);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      // Keyword (FTS-style) matches first; then blend in semantic matches (by meaning).
+      const fts = await searchDocuments(q);
+      let merged = fts;
+      if (semantic) {
+        try {
+          const all = await listDocuments();
+          const sem = await semanticSearch(q, all);
+          const seen = new Set(fts.map((d) => d.id));
+          merged = [...fts, ...sem.filter((d) => !seen.has(d.id))];
+        } catch {
+          // semantic unavailable — keep keyword results
+        }
+      }
+      if (!cancelled) {
+        setResults(merged);
         setLoading(false);
-      });
+      }
     }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, semantic]);
 
   // Category chips reflect only the categories actually present in the results.
   const availableCats = useMemo(() => {

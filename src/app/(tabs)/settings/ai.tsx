@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { PressableScale } from '@/components/pressable-scale';
 import { SettingGroup } from '@/components/settings/setting-group';
 import { SettingRow } from '@/components/settings/setting-row';
 import { SettingsScreen } from '@/components/settings/settings-screen';
@@ -12,43 +11,48 @@ import { AppText } from '@/components/ui/text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useToast } from '@/components/ui/toast';
 import { useTheme } from '@/hooks/use-theme';
-
-// TODO(device): wire semantic search + model downloads to react-native-executorch.
-// Toggles and download state are in-memory placeholders.
-
-const MODELS = [
-  {
-    id: 'embed',
-    label: 'Embedding model',
-    subtitle: '~90 MB · Powers semantic search on most devices',
-  },
-  {
-    id: 'gemma',
-    label: 'Gemma 3 1B',
-    subtitle: '~600 MB · On-device Q&A · Needs 4 GB+ RAM',
-  },
-] as const;
-
-function DownloadPill({ onPress }: { onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <PressableScale
-      onPress={onPress}
-      hitSlop={8}
-      style={[styles.pill, { backgroundColor: theme.primaryMuted }]}
-    >
-      <Icon name="download" size={15} color={theme.primary} />
-      <AppText variant="label" color="primary">
-        Download
-      </AppText>
-    </PressableScale>
-  );
-}
+import { setAiEnabled, usePreferences } from '@/lib/theme-store';
+import { clearEmbeddingCache, isEmbedderReady, loadEmbedder } from '@/services/ai';
 
 export default function AiSettings() {
   const theme = useTheme();
   const toast = useToast();
-  const [semantic, setSemantic] = useState(false);
+  const { aiEnabled } = usePreferences();
+
+  const [ready, setReady] = useState(isEmbedderReady());
+  const [progress, setProgress] = useState<number | null>(null);
+
+  const downloading = progress !== null;
+
+  const download = async () => {
+    if (downloading || ready) return;
+    setProgress(0);
+    try {
+      await loadEmbedder((p) => setProgress(p));
+      setReady(true);
+      setProgress(null);
+      setAiEnabled(true);
+      toast.show('Semantic search is ready');
+    } catch {
+      setProgress(null);
+      toast.show('Could not download the model');
+    }
+  };
+
+  const onToggleSemantic = (value: boolean) => {
+    if (value && !ready) {
+      // Need the model first — kick off the download.
+      void download();
+      return;
+    }
+    setAiEnabled(value);
+  };
+
+  const modelStatus = ready
+    ? 'Ready'
+    : downloading
+      ? `Downloading ${Math.round((progress ?? 0) * 100)}%`
+      : '~90 MB · not downloaded';
 
   return (
     <SettingsScreen title="AI & Indexing" back>
@@ -61,7 +65,7 @@ export default function AiSettings() {
             All processing happens on-device
           </AppText>
           <AppText variant="caption" color="textSecondary">
-            Models run locally. Your documents are never uploaded for indexing or search.
+            The model runs locally. Your documents are never uploaded for indexing or search.
           </AppText>
         </View>
       </View>
@@ -74,33 +78,33 @@ export default function AiSettings() {
         <SwitchRow
           icon="search"
           label="Semantic search"
-          subtitle="Understand queries, not only exact text"
-          value={semantic}
-          onValueChange={setSemantic}
+          subtitle={ready ? 'Understand queries, not only exact text' : 'Downloads a ~90 MB model on first use'}
+          value={aiEnabled && ready}
+          onValueChange={onToggleSemantic}
         />
       </SettingGroup>
 
       <SettingGroup
-        title="On-device models"
-        footer="Downloads happen once, over Wi-Fi. Larger models need a more capable device."
+        title="On-device model"
+        footer="Downloads once, over Wi-Fi. The embedding model powers semantic search."
         index={1}
       >
-        {MODELS.map((m) => (
-          <SettingRow
-            key={m.id}
-            icon="cpu"
-            label={m.label}
-            subtitle={m.subtitle}
-            right={<DownloadPill onPress={() => toast.show(`Downloading ${m.label}…`)} />}
-          />
-        ))}
+        <SettingRow icon="cpu" label="Embedding model (MiniLM)" subtitle={modelStatus} showChevron={false} />
       </SettingGroup>
 
       <Button
-        title="Re-index all documents"
-        icon="refresh"
-        variant="secondary"
-        onPress={() => toast.show('Re-indexing started')}
+        title={ready ? 'Re-index all documents' : downloading ? 'Downloading…' : 'Download & enable'}
+        icon={ready ? 'refresh' : 'download'}
+        variant={ready ? 'secondary' : 'primary'}
+        loading={downloading}
+        onPress={
+          ready
+            ? () => {
+                clearEmbeddingCache();
+                toast.show('Documents will re-index on the next search');
+              }
+            : download
+        }
       />
     </SettingsScreen>
   );
@@ -121,12 +125,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bannerText: { flex: 1, gap: 3 },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.pill,
-  },
 });

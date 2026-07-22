@@ -70,3 +70,6 @@ export function setBiometricLock(biometricLock: boolean) {
 export function setCustomCategories(customCategories: string[]) {
   update({ customCategories });
 }
+export function setAiEnabled(aiEnabled: boolean) {
+  update({ aiEnabled });
+}

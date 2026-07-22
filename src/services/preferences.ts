@@ -20,6 +20,8 @@ export interface Preferences {
   biometricLock: boolean;
   /** User-added category names (beyond the built-in six). */
   customCategories: string[];
+  /** Opt-in: on-device semantic search (downloads the embedding model). */
+  aiEnabled: boolean;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -27,6 +29,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   onboarded: false,
   biometricLock: false,
   customCategories: [],
+  aiEnabled: false,
 };
 
 const FILE = `${documentDirectory ?? ''}preferences.json`;
