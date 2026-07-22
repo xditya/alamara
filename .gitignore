@@ -46,3 +46,6 @@ example
 docs/
 dist-check/
 dist-web-check/
+
+# Claude Code local worktrees / session data
+.claude/
