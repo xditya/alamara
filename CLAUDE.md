@@ -10,9 +10,17 @@ PAN, ID cards, tickets, and certificates. **Nothing goes to the cloud.**
 - Engineering contract (folder layout, file ownership, component APIs, rules): **`docs/ARCHITECTURE.md`** — read before writing any code.
 - Task breakdown: `docs/BUILD-PLAN.md` · Live status: `docs/PROGRESS.md`
 
-## Stack (already scaffolded)
-Expo SDK 57, React 19.2, React Native 0.86 (New Architecture), expo-router (typed routes +
-reactCompiler ON), react-native-reanimated 4. Source lives under `src/` — alias `@/*` → `./src/*`.
+## Stack
+Expo **SDK 56**, React 19.2, React Native **0.85.3** (New Architecture), expo-router (typed
+routes + reactCompiler ON), react-native-reanimated 4. Source lives under `src/` — alias
+`@/*` → `./src/*`. (Downgraded 57→56 for Play-Store Expo Go support.)
+
+## Local Android build (Windows) — WORKS
+Set `$env:JAVA_HOME` to Android Studio's JBR (JDK 17):
+`C:\Users\Aditya S\AppData\Local\Programs\Android Studio\jbr` (system java 23 fails with
+`JvmVendorSpec … IBM_SEMERU`). Then `npx expo run:android` (auto-detects the running AVD).
+NDK r27, SDK at `…\AppData\Local\Android\Sdk`. The `with-openssl-jnilibs` config plugin
+bundles libcrypto/libssl for op-sqlite's SQLCipher (else `UnsatisfiedLinkError` at launch).
 
 ## Locked product decisions (do not re-litigate)
 - **Aesthetic:** "Soft & Friendly" — light-led, rounded 20px cards, per-category pastel
@@ -36,9 +44,11 @@ reactCompiler ON), react-native-reanimated 4. Source lives under `src/` — alia
    `src/types/*`, `src/services/*`, `src/components/ui/*`, `package.json`, `app.json`,
    `CLAUDE.md`, `AGENTS.md`, `docs/*` except your own progress file) unless your package
    explicitly owns them.
-2b. **Native modules can't be built on this Windows machine.** Do NOT call native APIs
-    directly in feature code — go through the interfaces in `src/services/*` (which have
-    mock implementations). Native wiring happens later during the device/EAS build phase.
+2b. **Native modules build fine now** (local Android dev build — see above). Feature code
+    still goes through `src/services/*`, but those are now REAL: `services/db`+`sqlite`
+    (op-sqlite/SQLCipher encrypted vault, key in Keystore via `secure-key`), `services/ocr`
+    (ML Kit), `services/biometric` (expo-local-authentication), `services/ai` (executorch
+    semantic search). Keep the service boundary; don't sprinkle native calls in screens.
 3. **Style only via semantic tokens** from `src/constants/theme.ts` (`useTheme()`,
    `Spacing`, `Radius`, `CategoryColors`). No raw hex in screens/components.
 4. **All taps use `PressableScale`.** All motion uses tokens from `src/constants/motion.ts`
