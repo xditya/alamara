@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.alamara"
+      "package": "me.xditya.alamara"
     },
     "web": {
       "output": "static",
@@ -46,11 +46,7 @@
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": [
-            "image/*",
-            "application/pdf",
-            "text/*"
-          ]
+          "androidIntentFilters": ["image/*", "application/pdf", "text/*"]
         }
       ],
       "expo-secure-store",
