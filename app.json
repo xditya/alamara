@@ -42,7 +42,13 @@
         }
       ],
       "expo-sharing",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["image/*", "application/pdf", "text/*"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

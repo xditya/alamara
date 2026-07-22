@@ -1,5 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useFonts } from 'expo-font';
+import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
@@ -9,17 +10,26 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '@/components/ui/toast';
 import { FontAssets } from '@/constants/fonts';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { replace } from '@/lib/nav';
+import { goWith, replace } from '@/lib/nav';
 import { session } from '@/lib/session';
 import { getPreferences, initPreferences } from '@/lib/theme-store';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  return (
+    <ShareIntentProvider>
+      <RootLayoutInner />
+    </ShareIntentProvider>
+  );
+}
+
+function RootLayoutInner() {
   const scheme = useColorScheme();
   const [loaded, error] = useFonts(FontAssets);
   const [prefsReady, setPrefsReady] = useState(false);
   const didGate = useRef(false);
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
 
   // Load persisted preferences (theme, onboarding, lock opt-in) before first paint.
   useEffect(() => {
@@ -43,6 +53,19 @@ export default function RootLayout() {
     }, 0);
     return () => clearTimeout(id);
   }, [ready]);
+
+  // Incoming share (image / PDF / text from another app) → straight into Review.
+  useEffect(() => {
+    if (!ready || !hasShareIntent) return;
+    const uris = (shareIntent.files ?? [])
+      .map((f) => f.path)
+      .filter((p): p is string => !!p)
+      .map((p) => (p.startsWith('file://') || p.startsWith('content://') ? p : `file://${p}`));
+    resetShareIntent();
+    if (uris.length > 0) {
+      setTimeout(() => goWith('/review', { uris: JSON.stringify(uris), source: 'Shared' }), 0);
+    }
+  }, [ready, hasShareIntent, shareIntent, resetShareIntent]);
 
   if (!ready) return null;
 
