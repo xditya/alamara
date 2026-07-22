@@ -2,39 +2,49 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef } from 'react';
-import { useColorScheme } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ToastProvider } from '@/components/ui/toast';
 import { FontAssets } from '@/constants/fonts';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { replace } from '@/lib/nav';
 import { session } from '@/lib/session';
+import { getPreferences, initPreferences } from '@/lib/theme-store';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const scheme = useColorScheme();
   const [loaded, error] = useFonts(FontAssets);
+  const [prefsReady, setPrefsReady] = useState(false);
   const didGate = useRef(false);
 
+  // Load persisted preferences (theme, onboarding, lock opt-in) before first paint.
   useEffect(() => {
-    if (loaded || error) SplashScreen.hideAsync();
-  }, [loaded, error]);
+    initPreferences().finally(() => setPrefsReady(true));
+  }, []);
 
-  // One-shot launch gate: onboarding (first run this session) → biometric lock → app.
+  const ready = (loaded || error) && prefsReady;
+
   useEffect(() => {
-    if ((!loaded && !error) || didGate.current) return;
+    if (ready) SplashScreen.hideAsync();
+  }, [ready]);
+
+  // One-shot launch gate: onboarding (first run ever) → biometric lock (if opted in) → app.
+  useEffect(() => {
+    if (!ready || didGate.current) return;
     didGate.current = true;
+    const prefs = getPreferences();
     const id = setTimeout(() => {
-      if (!session.onboarded) replace('/onboarding');
-      else if (!session.unlocked) replace('/lock');
+      if (!prefs.onboarded) replace('/onboarding');
+      else if (prefs.biometricLock && !session.unlocked) replace('/lock');
     }, 0);
     return () => clearTimeout(id);
-  }, [loaded, error]);
+  }, [ready]);
 
-  if (!loaded && !error) return null;
+  if (!ready) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

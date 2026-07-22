@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { SettingGroup } from '@/components/settings/setting-group';
@@ -8,29 +7,27 @@ import { AppText } from '@/components/ui/text';
 import { CategoryColors, Radius, Spacing } from '@/constants/theme';
 import { CATEGORY_LABELS, type DocCategory } from '@/types/models';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-// TODO: theme store — actual light/dark switching needs a persisted theme
-// preference. For now the app always follows the system appearance.
-
-type ThemeChoice = 'system' | 'light' | 'dark';
+import { setThemeChoice, usePreferences } from '@/lib/theme-store';
+import type { ThemeChoice } from '@/services/preferences';
 
 const CATEGORIES: DocCategory[] = ['aadhaar', 'pan', 'id', 'ticket', 'certificate', 'other'];
 
 export default function AppearanceSettings() {
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
-  const [choice, setChoice] = useState<ThemeChoice>('system');
+  const { theme } = usePreferences();
+
+  const footer =
+    theme === 'system'
+      ? 'Following your system appearance. Switch to Light or Dark to override it.'
+      : `Using the ${theme} theme everywhere in Alamara.`;
 
   return (
     <SettingsScreen title="Appearance" back>
-      <SettingGroup
-        title="Theme"
-        footer="Following your system appearance. In-app theme switching is coming soon."
-        index={0}
-      >
+      <SettingGroup title="Theme" footer={footer} index={0}>
         <View style={styles.segWrap}>
           <SegmentedControl<ThemeChoice>
-            value={choice}
-            onChange={setChoice}
+            value={theme}
+            onChange={setThemeChoice}
             options={[
               { value: 'system', label: 'System', icon: 'settings' },
               { value: 'light', label: 'Light', icon: 'sun' },

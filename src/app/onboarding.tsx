@@ -32,9 +32,15 @@ import { CategoryColors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { replace } from '@/lib/nav';
-import { session } from '@/lib/session';
+import { getPreferences, setOnboarded } from '@/lib/theme-store';
 import { PressableScale } from '@/components/pressable-scale';
 import * as biometric from '@/services/biometric';
+
+/** Persist the onboarding flag, then enter the app (via the lock if opted in). */
+function completeOnboarding() {
+  setOnboarded(true);
+  replace(getPreferences().biometricLock ? '/lock' : '/');
+}
 
 export default function OnboardingScreen() {
   const { width } = useWindowDimensions();
@@ -88,10 +94,9 @@ export default function OnboardingScreen() {
   const finish = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
-    // Warm up biometrics before handing off to the lock gate.
+    // Warm up biometrics before handing off to the launch gate.
     await biometric.isAvailable();
-    session.onboarded = true;
-    replace('/lock');
+    completeOnboarding();
   }, []);
 
   const onPrimary = useCallback(() => {
@@ -109,10 +114,7 @@ export default function OnboardingScreen() {
       <View style={styles.skipRow}>
         {isLast ? null : (
           <PressableScale
-            onPress={() => {
-              session.onboarded = true;
-              replace('/lock');
-            }}
+            onPress={completeOnboarding}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Skip onboarding"

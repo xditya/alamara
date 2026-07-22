@@ -8,6 +8,14 @@
 import * as storage from '@/services/storage';
 import type { DocCategory, Document, Ticket } from '@/types/models';
 
+// Storage / backup utilities (thin pass-throughs to the persistence layer).
+export const getStorageUsage = storage.getStorageUsage;
+export const getCacheSize = storage.getCacheSize;
+export const clearCache = storage.clearCache;
+export const exportVault = storage.exportVault;
+export const importVault = storage.importVault;
+export type { StorageUsage } from '@/services/storage';
+
 export function listDocuments(opts?: { category?: DocCategory }): Promise<Document[]> {
   return storage.readVault().then(({ documents }) => {
     const list = opts?.category ? documents.filter((d) => d.category === opts.category) : documents;
@@ -65,6 +73,35 @@ export async function saveTicket(ticket: Ticket): Promise<Ticket> {
   else data.tickets = [ticket, ...data.tickets];
   await storage.writeVault(data);
   return ticket;
+}
+
+/** Removes a tag from every document that carries it. */
+export async function removeTagEverywhere(tag: string): Promise<void> {
+  const data = await storage.readVault();
+  let changed = false;
+  for (const doc of data.documents) {
+    if (doc.tags.includes(tag)) {
+      doc.tags = doc.tags.filter((t) => t !== tag);
+      changed = true;
+    }
+  }
+  if (changed) await storage.writeVault(data);
+}
+
+/** Renames a tag across every document (merging if the new name already exists). */
+export async function renameTagEverywhere(from: string, to: string): Promise<void> {
+  const next = to.trim();
+  if (!next || next === from) return;
+  const data = await storage.readVault();
+  let changed = false;
+  for (const doc of data.documents) {
+    if (doc.tags.includes(from)) {
+      const set = new Set(doc.tags.map((t) => (t === from ? next : t)));
+      doc.tags = [...set];
+      changed = true;
+    }
+  }
+  if (changed) await storage.writeVault(data);
 }
 
 /** Removes any Wallet tickets tied to a document (used when its category changes). */

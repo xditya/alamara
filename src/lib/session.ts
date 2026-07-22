@@ -1,9 +1,9 @@
 /**
- * In-memory launch-gate state (resets on every app reload). Drives "onboard once, then
- * biometric-lock on launch" without persistence. Real persistence — an encrypted
- * onboarded flag + expo-secure-store — is a native TODO(device).
+ * Per-launch session state (resets on every app restart). Only `unlocked` lives
+ * here — it is intentionally NOT persisted, so the biometric lock re-challenges on
+ * each launch. The persistent `onboarded` flag and the `biometricLock` opt-in live
+ * in the preferences store (see `lib/theme-store`).
  */
 export const session = {
-  onboarded: false,
   unlocked: false,
 };

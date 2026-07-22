@@ -1,17 +1,15 @@
 /**
  * BarcodeView — a DECORATIVE stand-in for a scannable code.
  *
- * There is no native encoder on this machine, so we render a deterministic pattern
- * derived from hashing `value`: a module grid for 2D codes (qr / aztec) and stacked
- * vertical bars for linear/stacked codes (code128 / pdf417). The same value always
- * yields the same picture, so it *looks* like a real, stable code.
- *
- * TODO(device): a barcode/QR library (e.g. react-native-qrcode-svg / a PDF417 encoder)
- * to emit genuinely scannable codes.
+ * QR tickets render a GENUINELY scannable code via react-native-qrcode-svg. The
+ * rarer linear/2D formats (code128 / pdf417 / aztec) have no pure-JS encoder, so
+ * they fall back to a deterministic pattern derived from hashing `value` — the same
+ * value always yields the same picture, so it *looks* like a real, stable code.
  */
 
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
 import { AppText } from '@/components/ui/text';
 import { Radius, Spacing } from '@/constants/theme';
@@ -112,12 +110,26 @@ function buildBarRows(value: string, rows: number): Bar[][] {
 }
 
 export function BarcodeView({ value, format }: { value: string; format: Format }) {
-  const isGrid = format === 'qr' || format === 'aztec';
+  // Real, scannable QR — the common ticket case.
+  // Real, scannable QR — the common ticket case.
+  if (format === 'qr') {
+    return (
+      <View style={styles.paper} accessibilityRole="image" accessibilityLabel={`QR code for ${value}`}>
+        <QRCode value={value} size={184} color={INK} backgroundColor={PAPER} ecl="M" />
+        <AppText variant="mono" numberOfLines={1} style={styles.value}>
+          {value}
+        </AppText>
+      </View>
+    );
+  }
+  return <DecorativeCode value={value} format={format} />;
+}
 
-  const matrix = useMemo(
-    () => (isGrid ? buildMatrix(value, format as 'qr' | 'aztec') : null),
-    [value, format, isGrid],
-  );
+/** Deterministic (non-scannable) placeholder for formats without a pure-JS encoder. */
+function DecorativeCode({ value, format }: { value: string; format: Exclude<Format, 'qr'> }) {
+  const isGrid = format === 'aztec';
+
+  const matrix = useMemo(() => (isGrid ? buildMatrix(value, 'aztec') : null), [value, isGrid]);
   const barRows = useMemo(
     () => (isGrid ? null : buildBarRows(value, format === 'pdf417' ? 6 : 1)),
     [value, format, isGrid],

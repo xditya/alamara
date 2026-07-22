@@ -4,6 +4,8 @@
  * add-to-calendar / archive actions.
  */
 
+import * as Brightness from 'expo-brightness';
+import * as Calendar from 'expo-calendar';
 import { useEffect } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -24,6 +26,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
 import { useTicket } from '@/hooks/use-tickets';
 import { back } from '@/lib/nav';
+import * as db from '@/services/db';
 import { useLocalSearchParams } from 'expo-router';
 
 export default function TicketGlanceScreen() {
@@ -34,12 +37,55 @@ export default function TicketGlanceScreen() {
   const toast = useToast();
   const { ticket, document, loading } = useTicket(id);
 
-  // TODO(device): expo-brightness — ramp screen to max while this card is on screen so
-  // gate scanners can read the code, then restore the previous level on unmount.
+  // Ramp screen brightness to max while the ticket is on screen (so gate scanners
+  // can read the code), then restore the previous level on unmount.
   useEffect(() => {
-    // no-op placeholder until the native brightness module is wired in.
-    return () => {};
+    let previous: number | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        previous = await Brightness.getBrightnessAsync();
+        if (!cancelled) await Brightness.setBrightnessAsync(1);
+      } catch {
+        // brightness control unavailable — ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (previous != null) Brightness.setBrightnessAsync(previous).catch(() => {});
+    };
   }, []);
+
+  const onAddToCalendar = async () => {
+    if (!ticket) return;
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status !== 'granted') {
+        toast.show('Calendar permission is needed');
+        return;
+      }
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      const target =
+        calendars.find((c) => c.allowsModifications && c.source?.name !== 'Other') ??
+        calendars.find((c) => c.allowsModifications) ??
+        calendars[0];
+      if (!target) {
+        toast.show('No calendar available');
+        return;
+      }
+      await Calendar.createEventAsync(target.id, {
+        title: ticket.eventTitle,
+        startDate: new Date(ticket.eventAt),
+        endDate: new Date(ticket.eventAt + 2 * 60 * 60 * 1000),
+        location: ticket.venue,
+        notes: ticket.seat ? `Seat: ${ticket.seat}` : undefined,
+        timeZone: undefined,
+      });
+      toast.show('Added to your calendar');
+    } catch {
+      toast.show('Could not add to calendar');
+    }
+  };
 
   const c = CategoryColors[scheme].ticket;
   const enter = reduced ? FadeIn.duration(Durations.enter) : FadeInDown.duration(Durations.page).easing(Easings.out);
@@ -116,18 +162,17 @@ export default function TicketGlanceScreen() {
           ) : null}
 
           <View style={styles.actions}>
-            {/* TODO(device): expo-calendar — create the event on the device calendar. */}
+            <Button title="Add to calendar" icon="calendar" onPress={onAddToCalendar} />
             <Button
-              title="Add to calendar"
-              icon="calendar"
-              onPress={() => toast.show('Added to your calendar')}
-            />
-            {/* TODO(device): persist status='archived' via services/db once wired. */}
-            <Button
-              title="Archive ticket"
+              title={ticket.status === 'archived' ? 'Archived' : 'Archive ticket'}
               variant="secondary"
               icon="folder"
-              onPress={() => toast.show('Ticket archived')}
+              onPress={async () => {
+                if (ticket.status === 'archived') return;
+                await db.saveTicket({ ...ticket, status: 'archived' });
+                toast.show('Ticket archived');
+                back();
+              }}
             />
           </View>
         </ScrollView>

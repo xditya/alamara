@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import { StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '@/components/pressable-scale';
@@ -10,8 +11,7 @@ import type { ExtractedField } from '@/types/models';
 
 /**
  * A single label/value row for a document's extracted fields. Copyable fields
- * become tappable (PressableScale) and confirm with a toast.
- * Real clipboard is wired later — see the TODO below.
+ * become tappable (PressableScale), copy to the clipboard, and confirm with a toast.
  */
 export function FieldRow({ field }: { field: ExtractedField }) {
   const theme = useTheme();
@@ -37,8 +37,8 @@ export function FieldRow({ field }: { field: ExtractedField }) {
 
   if (!field.copyable) return body;
 
-  const onCopy = () => {
-    // TODO(device): expo-clipboard — Clipboard.setStringAsync(field.value)
+  const onCopy = async () => {
+    await Clipboard.setStringAsync(field.value);
     toast.show('Copied ' + field.label);
   };
 

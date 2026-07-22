@@ -15,12 +15,16 @@
  */
 
 import {
+  cacheDirectory,
   copyAsync,
   deleteAsync,
   documentDirectory,
+  getFreeDiskStorageAsync,
   getInfoAsync,
+  getTotalDiskCapacityAsync,
   makeDirectoryAsync,
   readAsStringAsync,
+  readDirectoryAsync,
   writeAsStringAsync,
 } from 'expo-file-system/legacy';
 
@@ -87,4 +91,107 @@ export async function deleteBlobs(uris: string[]): Promise<void> {
       // already gone — ignore
     }
   }
+}
+
+export interface StorageUsage {
+  /** Bytes used by the vault index + all page blobs. */
+  used: number;
+  /** Free bytes on the device. */
+  free: number;
+  /** Total device capacity in bytes. */
+  total: number;
+  /** Number of stored blob files. */
+  blobCount: number;
+}
+
+/** Real on-device usage: sum of the index file and every blob, plus device totals. */
+export async function getStorageUsage(): Promise<StorageUsage> {
+  let used = 0;
+  let blobCount = 0;
+  try {
+    const idx = await getInfoAsync(INDEX_FILE);
+    if (idx.exists && idx.size) used += idx.size;
+  } catch {
+    // ignore
+  }
+  try {
+    const dir = await getInfoAsync(BLOBS_DIR);
+    if (dir.exists) {
+      const names = await readDirectoryAsync(BLOBS_DIR);
+      for (const name of names) {
+        const info = await getInfoAsync(`${BLOBS_DIR}${name}`);
+        if (info.exists && info.size) {
+          used += info.size;
+          blobCount += 1;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  const [free, total] = await Promise.all([
+    getFreeDiskStorageAsync().catch(() => 0),
+    getTotalDiskCapacityAsync().catch(() => 0),
+  ]);
+  return { used, free, total, blobCount };
+}
+
+/** Total bytes currently held in the cache directory (decoded previews, temp files). */
+export async function getCacheSize(): Promise<number> {
+  const cache = cacheDirectory;
+  if (!cache) return 0;
+  let total = 0;
+  try {
+    const names = await readDirectoryAsync(cache);
+    for (const name of names) {
+      const info = await getInfoAsync(`${cache}${name}`);
+      if (info.exists && info.size) total += info.size;
+    }
+  } catch {
+    // ignore
+  }
+  return total;
+}
+
+/** Clears cached previews/temp files. The vault (documents + blobs) is untouched. */
+export async function clearCache(): Promise<void> {
+  const cache = cacheDirectory;
+  if (!cache) return;
+  try {
+    const names = await readDirectoryAsync(cache);
+    for (const name of names) {
+      try {
+        await deleteAsync(`${cache}${name}`, { idempotent: true });
+      } catch {
+        // in-use file — skip
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/** Writes the current vault to a shareable JSON backup file and returns its URI. */
+export async function exportVault(): Promise<string> {
+  const data = await readVault();
+  const dest = `${cacheDirectory ?? ROOT}alamara-backup.json`;
+  await writeAsStringAsync(dest, JSON.stringify(data, null, 2));
+  return dest;
+}
+
+/** Merges a backup file into the vault (new ids only) and returns how many were added. */
+export async function importVault(uri: string): Promise<{ documents: number; tickets: number }> {
+  const incoming = JSON.parse(await readAsStringAsync(uri)) as Partial<VaultData>;
+  const current = await readVault();
+  const docIds = new Set(current.documents.map((d) => d.id));
+  const ticketIds = new Set(current.tickets.map((t) => t.id));
+  const newDocs = (incoming.documents ?? []).filter((d) => d && d.id && !docIds.has(d.id));
+  const newTickets = (incoming.tickets ?? []).filter((t) => t && t.id && !ticketIds.has(t.id));
+  if (newDocs.length || newTickets.length) {
+    await writeVault({
+      documents: [...current.documents, ...newDocs],
+      tickets: [...current.tickets, ...newTickets],
+    });
+  }
+  return { documents: newDocs.length, tickets: newTickets.length };
 }

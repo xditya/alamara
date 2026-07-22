@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { SettingGroup } from '@/components/settings/setting-group';
@@ -12,20 +12,35 @@ import { useToast } from '@/components/ui/toast';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDocuments } from '@/hooks/use-documents';
 import { useTheme } from '@/hooks/use-theme';
-
-// TODO(device): real byte usage comes from the encrypted store + file blobs.
-// The MB figures below are illustrative placeholders.
-const MOCK_TOTAL_MB = 248;
-const MOCK_CACHE_MB = 34;
-const DEVICE_TOTAL_MB = 2048;
+import { useFocusEffect } from 'expo-router';
+import { useMemo } from 'react';
+import * as db from '@/services/db';
 
 const CATEGORIES: DocCategory[] = ['aadhaar', 'pan', 'id', 'ticket', 'certificate', 'other'];
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb < 0.1) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
 
 export default function StorageSettings() {
   const theme = useTheme();
   const toast = useToast();
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const { documents } = useDocuments();
+
+  const [usage, setUsage] = useState<db.StorageUsage | null>(null);
+  const [cacheBytes, setCacheBytes] = useState(0);
+
+  const refresh = useCallback(() => {
+    db.getStorageUsage().then(setUsage);
+    db.getCacheSize().then(setCacheBytes);
+  }, []);
+
+  useFocusEffect(refresh);
 
   const counts = useMemo(() => {
     const map = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<DocCategory, number>;
@@ -34,20 +49,33 @@ export default function StorageSettings() {
   }, [documents]);
 
   const active = CATEGORIES.filter((c) => counts[c] > 0);
-  const usedPct = Math.min(100, Math.round((MOCK_TOTAL_MB / DEVICE_TOTAL_MB) * 100));
+  const usedBytes = usage?.used ?? 0;
+  const totalBytes = usage?.total ?? 0;
+  const usedPct = totalBytes > 0 ? Math.min(100, Math.max(1, Math.round((usedBytes / totalBytes) * 100))) : 0;
+
+  const onClearCache = async () => {
+    await db.clearCache();
+    setCacheBytes(0);
+    toast.show('Cache cleared');
+  };
 
   return (
     <SettingsScreen title="Storage" back>
       <SettingGroup
         title="On this device"
-        footer={`Alamara is using about ${MOCK_TOTAL_MB} MB of ${DEVICE_TOTAL_MB / 1024} GB — roughly ${usedPct}% of allocated space.`}
+        footer={
+          totalBytes > 0
+            ? `Alamara is using ${formatBytes(usedBytes)} of ${formatBytes(totalBytes)} — about ${usedPct}% of device storage.`
+            : 'Alamara stores everything locally on this device.'
+        }
         index={0}
       >
         <View style={styles.summary}>
           <View style={styles.summaryHead}>
-            <AppText variant="title">{MOCK_TOTAL_MB} MB</AppText>
+            <AppText variant="title">{formatBytes(usedBytes)}</AppText>
             <AppText variant="caption" color="textSecondary">
-              {documents.length} documents
+              {documents.length} {documents.length === 1 ? 'document' : 'documents'} ·{' '}
+              {usage?.blobCount ?? 0} {usage?.blobCount === 1 ? 'file' : 'files'}
             </AppText>
           </View>
 
@@ -85,18 +113,13 @@ export default function StorageSettings() {
 
       <SettingGroup
         title="Cache"
-        footer="Cached previews and decrypted temp files. Clearing is safe — they rebuild on demand."
+        footer="Decoded previews and temporary files. Clearing is safe — they rebuild on demand."
         index={2}
       >
-        <SettingRow label="Cached data" value={`${MOCK_CACHE_MB} MB`} showChevron={false} />
+        <SettingRow label="Cached data" value={formatBytes(cacheBytes)} showChevron={false} />
       </SettingGroup>
 
-      <Button
-        title="Clear cache"
-        icon="trash"
-        variant="secondary"
-        onPress={() => toast.show('Cache cleared')}
-      />
+      <Button title="Clear cache" icon="trash" variant="secondary" onPress={onClearCache} />
     </SettingsScreen>
   );
 }
