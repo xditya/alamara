@@ -13,7 +13,7 @@
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,8 +32,10 @@ import { CategoryColors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
+import { classify, extractFields, suggestName } from '@/lib/classify';
 import { back } from '@/lib/nav';
 import * as db from '@/services/db';
+import { recognizeText } from '@/services/ocr';
 import {
   CATEGORY_LABELS,
   type DocCategory,
@@ -94,6 +96,8 @@ export default function ReviewScreen() {
   // Seeded from an event handler (not render) so the picker always has a concrete
   // starting value without calling Date.now() during render.
   const [pickerSeed, setPickerSeed] = useState(0);
+  const [analyzing, setAnalyzing] = useState(false);
+  const didAnalyze = useRef(false);
 
   // Prefill everything when editing an existing document.
   useEffect(() => {
@@ -117,6 +121,33 @@ export default function ReviewScreen() {
       mounted = false;
     };
   }, [editId]);
+
+  // Auto-index a freshly captured page: OCR → classify → extract fields → suggest a
+  // name. Runs once, and only fills values the user hasn't already set.
+  useEffect(() => {
+    if (isEditing || didAnalyze.current) return;
+    const first = pickedUris[0];
+    if (!first || isPdf(first)) return;
+    didAnalyze.current = true;
+    let mounted = true;
+    setAnalyzing(true);
+    recognizeText(first)
+      .then(({ text }) => {
+        if (!mounted || !text.trim()) return;
+        const detected = classify(text);
+        const detectedFields = extractFields(text, detected.category);
+        setCategory((prev) => (prev === 'other' ? detected.category : prev));
+        setFields((prev) => (prev.length === 0 ? detectedFields : prev));
+        setName((prev) => prev || suggestName(detected.category, detectedFields));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setAnalyzing(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isEditing, pickedUris]);
 
   const displayUris = loadedDoc ? loadedDoc.pages.map((p) => p.uri).filter(Boolean) : pickedUris;
   const pageCount = loadedDoc ? loadedDoc.pages.length : Math.max(pickedUris.length, 1);
@@ -259,7 +290,9 @@ export default function ReviewScreen() {
                   <View style={styles.detectRow}>
                     <Badge label={CATEGORY_LABELS[category]} tone="primary" />
                     <AppText variant="caption" color="textSecondary">
-                      {pageCount} {pageCount === 1 ? 'page' : 'pages'} · {isEditing ? 'Editing' : source}
+                      {analyzing
+                        ? 'Reading document…'
+                        : `${pageCount} ${pageCount === 1 ? 'page' : 'pages'} · ${isEditing ? 'Editing' : source}`}
                     </AppText>
                   </View>
                 </View>
