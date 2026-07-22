@@ -65,7 +65,7 @@ export default function HomeScreen() {
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.bgGrouped }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Section index={0} reduced={reduced}>
-          <GreetingHeader name="Aditya" />
+          <GreetingHeader />
         </Section>
 
         <Section index={1} reduced={reduced}>

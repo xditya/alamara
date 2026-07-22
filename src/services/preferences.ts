@@ -16,6 +16,8 @@ export type ThemeChoice = 'system' | 'light' | 'dark';
 export interface Preferences {
   theme: ThemeChoice;
   onboarded: boolean;
+  /** The name the user gave on first launch; used in the greeting. Empty = not set. */
+  userName: string;
   /** Opt-in: require biometric/device auth on launch. */
   biometricLock: boolean;
   /** User-added category names (beyond the built-in six). */
@@ -27,6 +29,7 @@ export interface Preferences {
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: 'system',
   onboarded: false,
+  userName: '',
   biometricLock: false,
   customCategories: [],
   aiEnabled: false,

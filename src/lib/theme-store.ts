@@ -64,6 +64,9 @@ export function setThemeChoice(theme: ThemeChoice) {
 export function setOnboarded(onboarded: boolean) {
   update({ onboarded });
 }
+export function setUserName(userName: string) {
+  update({ userName });
+}
 export function setBiometricLock(biometricLock: boolean) {
   update({ biometricLock });
 }
