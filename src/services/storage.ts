@@ -28,6 +28,7 @@ import {
   writeAsStringAsync,
 } from 'expo-file-system/legacy';
 
+import { kvGet, kvSet } from '@/services/sqlite';
 import type { Document, Ticket } from '@/types/models';
 
 export interface VaultData {
@@ -37,7 +38,8 @@ export interface VaultData {
 
 const ROOT = documentDirectory ?? '';
 const BLOBS_DIR = `${ROOT}blobs/`;
-const INDEX_FILE = `${ROOT}vault-index.json`;
+const INDEX_FILE = `${ROOT}vault-index.json`; // legacy plaintext index (migrated away)
+const VAULT_KEY = 'vault';
 
 async function ensureBlobsDir(): Promise<void> {
   const info = await getInfoAsync(BLOBS_DIR);
@@ -45,19 +47,35 @@ async function ensureBlobsDir(): Promise<void> {
 }
 
 export async function readVault(): Promise<VaultData> {
-  const info = await getInfoAsync(INDEX_FILE);
-  if (!info.exists) return { documents: [], tickets: [] };
+  // Encrypted store (SQLCipher) is the source of truth.
   try {
-    const parsed = JSON.parse(await readAsStringAsync(INDEX_FILE)) as Partial<VaultData>;
-    return { documents: parsed.documents ?? [], tickets: parsed.tickets ?? [] };
+    const raw = await kvGet(VAULT_KEY);
+    if (raw != null) {
+      const parsed = JSON.parse(raw) as Partial<VaultData>;
+      return { documents: parsed.documents ?? [], tickets: parsed.tickets ?? [] };
+    }
   } catch {
-    // Corrupt or partial write — start clean rather than crash.
-    return { documents: [], tickets: [] };
+    // fall through to migration / empty
   }
+  // One-time migration: fold a legacy plaintext JSON index into the encrypted DB,
+  // then delete the plaintext copy.
+  try {
+    const info = await getInfoAsync(INDEX_FILE);
+    if (info.exists) {
+      const parsed = JSON.parse(await readAsStringAsync(INDEX_FILE)) as Partial<VaultData>;
+      const data = { documents: parsed.documents ?? [], tickets: parsed.tickets ?? [] };
+      await kvSet(VAULT_KEY, JSON.stringify(data));
+      await deleteAsync(INDEX_FILE, { idempotent: true });
+      return data;
+    }
+  } catch {
+    // ignore — start clean
+  }
+  return { documents: [], tickets: [] };
 }
 
 export async function writeVault(data: VaultData): Promise<void> {
-  await writeAsStringAsync(INDEX_FILE, JSON.stringify(data));
+  await kvSet(VAULT_KEY, JSON.stringify(data));
 }
 
 /** File extension (with dot) derived from a URI, defaulting to `.jpg`. */
@@ -109,8 +127,8 @@ export async function getStorageUsage(): Promise<StorageUsage> {
   let used = 0;
   let blobCount = 0;
   try {
-    const idx = await getInfoAsync(INDEX_FILE);
-    if (idx.exists && idx.size) used += idx.size;
+    const raw = await kvGet(VAULT_KEY);
+    if (raw) used += raw.length;
   } catch {
     // ignore
   }
