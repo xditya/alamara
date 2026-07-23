@@ -133,7 +133,19 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: Cache Gradle
+        # setup-java's built-in `cache: gradle` can't be used here: it hashes
+        # **/*.gradle* at checkout time, but android/ is gitignored and only
+        # exists after prebuild, so it fails with "No file ... matched".
+        # Key off the lockfile instead — that is what determines the deps.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Install dependencies
         run: npm ci
