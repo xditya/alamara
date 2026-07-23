@@ -17,7 +17,6 @@ import {
   makeDirectoryAsync,
   readAsStringAsync,
 } from 'expo-file-system/legacy';
-import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Share } from 'react-native';
 
@@ -27,6 +26,24 @@ import type { DocPage, Document } from '@/types/models';
 export const PROMO_LINE = 'Shared from Alamara · alamara.xditya.me';
 
 const STAGE_DIR = `${cacheDirectory ?? ''}share/`;
+
+/**
+ * `expo-print` is loaded lazily, on purpose. It is a native module, so importing it at
+ * module scope throws `Cannot find native module 'ExpoPrint'` on any build made before
+ * the dependency was added — and that throw happens while this file is being evaluated,
+ * which takes the entire document screen down with it ("missing the required default
+ * export"). Required at call time, a stale build costs you the PDF option and nothing else.
+ */
+type PrintModule = { printToFileAsync(options: { html: string }): Promise<{ uri: string }> };
+
+function loadPrint(): PrintModule {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- deferring the load IS the fix
+    return require('expo-print') as PrintModule;
+  } catch {
+    throw new Error('PDF export needs a new dev build — rerun `npx expo run:android`');
+  }
+}
 
 const IMAGE_MIME: Record<string, { mime: string; uti: string }> = {
   jpg: { mime: 'image/jpeg', uti: 'public.jpeg' },
@@ -130,8 +147,9 @@ export async function shareDocumentAsPdf(document: Document): Promise<void> {
   const pages = imagePagesOf(document);
   if (pages.length === 0) throw new Error('This document has no pages to put in a PDF');
 
+  const print = loadPrint(); // before base64-ing every page, so a stale build fails instantly
   const html = await buildPdfHtml(pages);
-  const { uri } = await Print.printToFileAsync({ html });
+  const { uri } = await print.printToFileAsync({ html });
   const staged = await stage(uri, shareFileName(document.name, 'pdf'));
   await deleteAsync(uri, { idempotent: true }); // the render temp file is now a duplicate
   await share(staged, 'application/pdf', 'com.adobe.pdf', `Share ${document.name}`);

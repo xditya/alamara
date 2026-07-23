@@ -83,8 +83,9 @@ export default function DocumentDetail() {
     toast.show(progress);
     try {
       await task();
-    } catch {
-      toast.show('Could not share');
+    } catch (err) {
+      // These messages are written for the user ("no pages to put in a PDF"), so show them.
+      toast.show(err instanceof Error && err.message ? err.message : 'Could not share');
     } finally {
       setSharing(false);
     }
