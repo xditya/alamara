@@ -12,18 +12,38 @@ import { useToast } from '@/components/ui/toast';
 import { useTheme } from '@/hooks/use-theme';
 import * as db from '@/services/db';
 
+function formatBytes(bytes: number): string {
+  if (!bytes) return '0 KB';
+  const mb = bytes / (1024 * 1024);
+  if (mb < 0.1) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  return `${(mb / 1024).toFixed(1)} GB`;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 export default function BackupSettings() {
   const theme = useTheme();
   const toast = useToast();
   const [busy, setBusy] = useState<null | 'export' | 'import'>(null);
+  // Packing images is slow enough to need a running commentary, and the finished
+  // size is the thing users most want to know before they pick a place to save it.
+  const [progress, setProgress] = useState<string | null>(null);
 
   const onExport = async () => {
     if (busy) return;
     setBusy('export');
+    setProgress('Preparing backup…');
     try {
-      const uri = await db.exportVault();
+      const res = await db.exportVault((done, total) => {
+        setProgress(total ? `Packing page ${done} of ${total}…` : 'Preparing backup…');
+      });
+      setProgress(null);
+      const size = formatBytes(res.bytes);
+      const missing = res.skippedPages ? ` · ${plural(res.skippedPages, 'image')} missing` : '';
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
+        toast.show(`Backup ready · ${size}${missing}`);
+        await Sharing.shareAsync(res.uri, {
           mimeType: 'application/json',
           dialogTitle: 'Save your Alamara backup',
         });
@@ -33,6 +53,7 @@ export default function BackupSettings() {
     } catch {
       toast.show('Could not create the backup');
     } finally {
+      setProgress(null);
       setBusy(null);
     }
   };
@@ -46,15 +67,20 @@ export default function BackupSettings() {
         copyToCacheDirectory: true,
       });
       if (res.canceled || !res.assets?.[0]) return;
+      setProgress('Restoring…');
       const added = await db.importVault(res.assets[0].uri);
       if (added.documents === 0 && added.tickets === 0) {
         toast.show('Nothing new to restore');
       } else {
-        toast.show(`Restored ${added.documents} document${added.documents === 1 ? '' : 's'}`);
+        const detail = added.legacy
+          ? 'older backup, no images'
+          : plural(added.pages, 'page image') + ' restored';
+        toast.show(`Restored ${plural(added.documents, 'document')} · ${detail}`);
       }
     } catch {
       toast.show('That file could not be restored');
     } finally {
+      setProgress(null);
       setBusy(null);
     }
   };
@@ -70,8 +96,9 @@ export default function BackupSettings() {
             No cloud. You hold the file.
           </AppText>
           <AppText variant="caption" color="textSecondary">
-            Your backup is a single file that never touches a server. Save it wherever you trust — an
-            external drive, a password manager, or your own storage.
+            Your backup is a single file that never touches a server. It carries your page images
+            too, so keep it somewhere you trust — an external drive, a password manager, or your own
+            storage.
           </AppText>
         </View>
       </View>
@@ -87,9 +114,22 @@ export default function BackupSettings() {
         />
       </View>
 
+      {progress ? (
+        <AppText variant="caption" color="textSecondary" style={styles.note}>
+          {progress}
+        </AppText>
+      ) : null}
+
       <AppText variant="caption" color="textSecondary" style={styles.note}>
-        The backup holds every document&apos;s details, fields, tags and tickets. Page images stay on
-        this device. Restoring merges the file in and never overwrites what you already have.
+        The backup holds every document&apos;s details, fields, tags and tickets — and the page
+        images themselves, so restoring on a new phone brings your documents back complete. Packing
+        the images makes the file large (roughly a third bigger than the images on their own).
+        Restoring merges the file in and never overwrites what you already have.
+      </AppText>
+
+      <AppText variant="caption" color="textSecondary" style={styles.note}>
+        Backups made by older versions of Alamara hold details only. Those still restore, but their
+        pages come back as placeholders you can re-scan.
       </AppText>
     </SettingsScreen>
   );

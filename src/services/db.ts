@@ -14,7 +14,7 @@ export const getCacheSize = storage.getCacheSize;
 export const clearCache = storage.clearCache;
 export const exportVault = storage.exportVault;
 export const importVault = storage.importVault;
-export type { StorageUsage } from '@/services/storage';
+export type { ExportResult, ImportResult, StorageUsage, VaultBackup } from '@/services/storage';
 
 export function listDocuments(opts?: { category?: DocCategory }): Promise<Document[]> {
   return storage.readVault().then(({ documents }) => {

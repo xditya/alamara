@@ -29,7 +29,7 @@ import {
 } from 'expo-file-system/legacy';
 
 import { kvGet, kvSet } from '@/services/sqlite';
-import type { Document, Ticket } from '@/types/models';
+import type { DocPage, Document, Ticket } from '@/types/models';
 
 export interface VaultData {
   documents: Document[];
@@ -189,27 +189,217 @@ export async function clearCache(): Promise<void> {
   }
 }
 
-/** Writes the current vault to a shareable JSON backup file and returns its URI. */
-export async function exportVault(): Promise<string> {
-  const data = await readVault();
-  const dest = `${cacheDirectory ?? ROOT}alamara-backup.json`;
-  await writeAsStringAsync(dest, JSON.stringify(data, null, 2));
+/* ------------------------------------------------------------------ backup */
+
+/**
+ * Backup format. A page's `uri` is deliberately NOT part of it: absolute sandbox
+ * paths are meaningless on another device (or after a reinstall), so the bytes
+ * themselves travel inside the file as base64 and are written back to a fresh
+ * blob on import. `format`/`version` let a future reader detect the shape.
+ */
+export const BACKUP_FORMAT = 'alamara.backup';
+export const BACKUP_VERSION = 1;
+
+/** A page as it travels in a backup: metadata plus the embedded image bytes. */
+export interface BackupPage extends Omit<DocPage, 'uri'> {
+  /** Base64 file contents. Absent when the source file was missing/unreadable. */
+  data?: string;
+  /** Extension of the original file, including the dot (e.g. `.jpg`). */
+  ext?: string;
+  mime?: string;
+}
+
+export interface BackupDocument extends Omit<Document, 'pages'> {
+  pages: BackupPage[];
+}
+
+export interface VaultBackup {
+  format: typeof BACKUP_FORMAT;
+  version: number;
+  exportedAt: number;
+  documents: BackupDocument[];
+  tickets: Ticket[];
+}
+
+export interface ExportResult {
+  /** URI of the written backup file (in the cache directory, ready to share). */
+  uri: string;
+  /** Size of the backup file in bytes. */
+  bytes: number;
+  documents: number;
+  tickets: number;
+  /** Pages whose image bytes made it into the file. */
+  pages: number;
+  /** Pages whose file was missing/unreadable and were exported without bytes. */
+  skippedPages: number;
+}
+
+export interface ImportResult {
+  documents: number;
+  tickets: number;
+  /** Page images written back to disk. */
+  pages: number;
+  /** True when the file was a pre-v1 backup, i.e. metadata only. */
+  legacy: boolean;
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.heic': 'image/heic',
+  '.pdf': 'application/pdf',
+};
+
+function mimeOf(ext: string): string {
+  return MIME_BY_EXT[ext.toLowerCase()] ?? 'application/octet-stream';
+}
+
+/** Page fields that survive a round-trip, listed explicitly so no stale `uri` leaks in. */
+function pageMeta(page: BackupPage | DocPage): Omit<DocPage, 'uri'> {
+  return { id: page.id, side: page.side, width: page.width, height: page.height };
+}
+
+/** Writes base64 bytes into the blobs directory and returns the new local URI. */
+export async function persistBase64(data: string, id: string, ext: string): Promise<string> {
+  await ensureBlobsDir();
+  const dest = `${BLOBS_DIR}${id}${/^\.[a-zA-Z0-9]{1,5}$/.test(ext) ? ext : '.jpg'}`;
+  await deleteAsync(dest, { idempotent: true });
+  await writeAsStringAsync(dest, data, { encoding: 'base64' });
   return dest;
 }
 
-/** Merges a backup file into the vault (new ids only) and returns how many were added. */
-export async function importVault(uri: string): Promise<{ documents: number; tickets: number }> {
-  const incoming = JSON.parse(await readAsStringAsync(uri)) as Partial<VaultData>;
+/**
+ * Writes the whole vault — metadata *and* page images — to a single shareable
+ * file so a restore on a fresh install reproduces the documents intact.
+ *
+ * A page whose file has gone missing is exported without its bytes rather than
+ * failing the export: losing one image beats losing the entire backup.
+ * `onProgress` fires per page so the UI can show movement on large vaults.
+ */
+export async function exportVault(
+  onProgress?: (done: number, total: number) => void,
+): Promise<ExportResult> {
+  const data = await readVault();
+  const total = data.documents.reduce((n, d) => n + d.pages.length, 0);
+  let done = 0;
+  let pages = 0;
+  let skippedPages = 0;
+
+  const documents: BackupDocument[] = [];
+  for (const doc of data.documents) {
+    const backupPages: BackupPage[] = [];
+    for (const page of doc.pages) {
+      let embedded: BackupPage = pageMeta(page);
+      if (page.uri) {
+        try {
+          const info = await getInfoAsync(page.uri);
+          if (info.exists && !info.isDirectory) {
+            const ext = extOf(page.uri);
+            embedded = {
+              ...embedded,
+              data: await readAsStringAsync(page.uri, { encoding: 'base64' }),
+              ext,
+              mime: mimeOf(ext),
+            };
+          }
+        } catch {
+          // unreadable file — keep the page, drop its bytes
+        }
+      }
+      if (embedded.data) pages += 1;
+      else skippedPages += 1;
+      backupPages.push(embedded);
+      onProgress?.(++done, total);
+    }
+    documents.push({ ...doc, pages: backupPages });
+  }
+
+  const payload: VaultBackup = {
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    exportedAt: Date.now(),
+    documents,
+    tickets: data.tickets,
+  };
+  // Base64 already inflates this ~33%; skip pretty-printing to save the rest.
+  const dest = `${cacheDirectory ?? ROOT}alamara-backup.json`;
+  await deleteAsync(dest, { idempotent: true });
+  await writeAsStringAsync(dest, JSON.stringify(payload));
+  const info = await getInfoAsync(dest);
+
+  return {
+    uri: dest,
+    bytes: info.exists && info.size ? info.size : 0,
+    documents: documents.length,
+    tickets: data.tickets.length,
+    pages,
+    skippedPages,
+  };
+}
+
+function isBackupEnvelope(value: unknown): value is VaultBackup {
+  return !!value && typeof value === 'object' && (value as VaultBackup).format === BACKUP_FORMAT;
+}
+
+/**
+ * Merges a backup file into the vault (new ids only — nothing on the device is
+ * ever overwritten) and returns how much was added.
+ *
+ * URIs inside a backup are never trusted: every embedded page is written out as
+ * a brand-new blob here and the document points at that. Pre-v1 backups carry
+ * bare sandbox paths that cannot exist on this install, so their pages are
+ * blanked — the UI then shows the category placeholder instead of a dead image.
+ */
+export async function importVault(uri: string): Promise<ImportResult> {
+  const parsed: unknown = JSON.parse(await readAsStringAsync(uri));
+  const legacy = !isBackupEnvelope(parsed);
+  // A hand-edited or truncated file can be anything at all — treat missing or
+  // non-array sections as empty instead of throwing halfway through a merge.
+  const incoming = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<VaultBackup>;
+  const inDocs = Array.isArray(incoming.documents) ? incoming.documents : [];
+  const inTickets = Array.isArray(incoming.tickets) ? incoming.tickets : [];
+
   const current = await readVault();
   const docIds = new Set(current.documents.map((d) => d.id));
   const ticketIds = new Set(current.tickets.map((t) => t.id));
-  const newDocs = (incoming.documents ?? []).filter((d) => d && d.id && !docIds.has(d.id));
-  const newTickets = (incoming.tickets ?? []).filter((t) => t && t.id && !ticketIds.has(t.id));
+  const candidates = inDocs.filter((d) => d && d.id && !docIds.has(d.id));
+  const newTickets = inTickets.filter((t) => t && t.id && !ticketIds.has(t.id));
+
+  let pages = 0;
+  const newDocs: Document[] = [];
+  for (const doc of candidates) {
+    const restored: DocPage[] = [];
+    const list = Array.isArray(doc.pages) ? doc.pages : [];
+    for (let i = 0; i < list.length; i++) {
+      const page = list[i];
+      if (!page) continue;
+      let restoredUri = '';
+      if (!legacy && page.data) {
+        try {
+          // Fresh filename per restore so an import can never clobber an
+          // existing blob that happens to share the document id.
+          restoredUri = await persistBase64(
+            page.data,
+            `${doc.id}-${i}-${Date.now()}`,
+            page.ext ?? '.jpg',
+          );
+          pages += 1;
+        } catch {
+          restoredUri = ''; // write failed — placeholder beats a dangling path
+        }
+      }
+      restored.push({ ...pageMeta(page), uri: restoredUri });
+    }
+    newDocs.push({ ...doc, pages: restored });
+  }
+
   if (newDocs.length || newTickets.length) {
     await writeVault({
       documents: [...current.documents, ...newDocs],
       tickets: [...current.tickets, ...newTickets],
     });
   }
-  return { documents: newDocs.length, tickets: newTickets.length };
+  return { documents: newDocs.length, tickets: newTickets.length, pages, legacy };
 }
