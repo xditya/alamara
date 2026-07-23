@@ -69,12 +69,7 @@ export default function HomeScreen() {
         </Section>
 
         <Section index={1} reduced={reduced}>
-          <SearchBar
-            value=""
-            editable={false}
-            onPressIn={() => go('/search')}
-            placeholder="Search your vault"
-          />
+          <SearchBar onPress={() => go('/search')} placeholder="Search your vault" />
         </Section>
 
         <Section index={2} reduced={reduced}>

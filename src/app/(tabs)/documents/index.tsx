@@ -64,7 +64,7 @@ export default function DocumentsLibrary() {
         </View>
 
         <View style={styles.searchWrap}>
-          <SearchBar value="" editable={false} onPressIn={() => go('/search')} />
+          <SearchBar onPress={() => go('/search')} placeholder="Search documents" />
         </View>
 
         <ScrollView
