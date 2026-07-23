@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
-import * as Sharing from 'expo-sharing';
-import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, View, type AlertButton } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -23,6 +23,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
 import { backTo, goWith } from '@/lib/nav';
 import * as db from '@/services/db';
+import * as share from '@/services/share';
 import { CATEGORY_LABELS } from '@/types/models';
 
 export default function DocumentDetail() {
@@ -32,6 +33,7 @@ export default function DocumentDetail() {
   const reduced = useReducedMotion();
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const { document, loading, refresh } = useDocument(id);
+  const [sharing, setSharing] = useState(false);
 
   const enter = (i: number) => (reduced ? FadeIn : FadeInDown).duration(Durations.enter).delay(i * StaggerMs);
 
@@ -74,19 +76,50 @@ export default function DocumentDetail() {
   const c = CategoryColors[scheme][document.category];
   const label = CATEGORY_LABELS[document.category];
 
-  const onShare = async () => {
-    const page = document.pages.find((p) => p.uri);
+  // Rendering a PDF takes a beat, so the button locks until the sheet is done.
+  const runShare = async (task: () => Promise<void>, progress: string) => {
+    if (sharing) return;
+    setSharing(true);
+    toast.show(progress);
     try {
-      if (page?.uri && (await Sharing.isAvailableAsync())) {
-        await Sharing.shareAsync(page.uri);
-      } else {
-        // No file to share (e.g. a details-only doc) — share the fields as text.
-        const text = [document.name, ...document.fields.map((f) => `${f.label}: ${f.value}`)].join('\n');
-        await Share.share({ message: text });
-      }
+      await task();
     } catch {
       toast.show('Could not share');
+    } finally {
+      setSharing(false);
     }
+  };
+
+  const onShare = () => {
+    if (sharing) return;
+    const images = share.imagePagesOf(document);
+    const files = share.filePagesOf(document);
+
+    // Details-only document — nothing to attach, so share the fields as text.
+    if (files.length === 0) {
+      void runShare(() => share.shareDocumentAsText(document), 'Sharing…');
+      return;
+    }
+    // Already a PDF page: hand the file over as-is, just properly named.
+    if (images.length === 0) {
+      void runShare(() => share.shareDocumentPage(document, files[0]), 'Preparing…');
+      return;
+    }
+
+    const multi = images.length > 1;
+    const buttons: AlertButton[] = [
+      {
+        text: multi ? `PDF (all ${images.length} pages)` : 'PDF',
+        onPress: () => void runShare(() => share.shareDocumentAsPdf(document), 'Making PDF…'),
+      },
+      {
+        // Never silently drop pages — say so when only the first one goes out.
+        text: multi ? 'Image (first page only)' : 'Image',
+        onPress: () => void runShare(() => share.shareDocumentPage(document, images[0]), 'Preparing…'),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ];
+    Alert.alert('Share document', `How would you like to share “${document.name}”?`, buttons);
   };
 
   const onEdit = () => goWith('/review', { editId: document.id });
@@ -256,7 +289,7 @@ export default function DocumentDetail() {
         <Animated.View entering={enter(4)} style={styles.actions}>
           <View style={styles.actionRow}>
             <View style={styles.actionItem}>
-              <Button title="Share" icon="share" variant="secondary" onPress={onShare} />
+              <Button title="Share" icon="share" variant="secondary" loading={sharing} onPress={onShare} />
             </View>
             <View style={styles.actionItem}>
               <Button title="Edit" icon="edit" variant="secondary" onPress={onEdit} />

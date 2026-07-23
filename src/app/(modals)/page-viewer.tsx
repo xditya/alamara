@@ -15,7 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PressableScale } from '@/components/pressable-scale';
 import { Icon } from '@/components/ui/icon';
 import { AppText } from '@/components/ui/text';
-import { useToast } from '@/components/ui/toast';
 import { Durations } from '@/constants/motion';
 import { CategoryColors, Radius, Spacing, type DocCategory } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -28,7 +27,6 @@ const CATEGORIES: DocCategory[] = ['aadhaar', 'pan', 'id', 'ticket', 'certificat
 export default function PageViewerScreen() {
   const theme = useTheme();
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
-  const toast = useToast();
   const reduced = useReducedMotion();
 
   const params = useLocalSearchParams<{ category?: string; name?: string; page?: string; uri?: string }>();
@@ -56,13 +54,8 @@ export default function PageViewerScreen() {
             {pageLabel}
           </AppText>
         </View>
-        <PressableScale
-          onPress={() => toast.show('Preparing to share…')}
-          style={[styles.iconBtn, { backgroundColor: theme.surface }]}
-          hitSlop={8}
-        >
-          <Icon name="share" size={20} color={theme.text} />
-        </PressableScale>
+        {/* Balances the close button so the title stays centred. */}
+        <View style={styles.iconBtn} />
       </View>
 
       {/* Page image, or a placeholder when there's nothing to show (e.g. a PDF). */}
