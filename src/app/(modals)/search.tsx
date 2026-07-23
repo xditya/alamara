@@ -20,7 +20,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
 import { back } from '@/lib/nav';
 import { usePreferences } from '@/lib/theme-store';
-import { isEmbedderReady, semanticSearch } from '@/services/ai';
+import { isEmbedderReady, semanticSearch, warmUpEmbedder } from '@/services/ai';
 import { listDocuments, searchDocuments } from '@/services/db';
 import { CATEGORY_LABELS, type DocCategory, type Document } from '@/types/models';
 
@@ -36,7 +36,25 @@ export default function SearchModal() {
   const [loading, setLoading] = useState(false);
   const [activeCat, setActiveCat] = useState<DocCategory | null>(null);
 
-  const semantic = aiEnabled && isEmbedderReady();
+  const [embedderReady, setEmbedderReady] = useState(isEmbedderReady());
+
+  const semantic = aiEnabled && embedderReady;
+
+  // The loaded module is lost on every app restart while the downloaded model
+  // file is not, so reload it here — otherwise search silently drops back to
+  // keyword-only until the user reopens AI settings.
+  useEffect(() => {
+    if (!aiEnabled || embedderReady) return;
+    let cancelled = false;
+    void warmUpEmbedder()
+      .catch(() => false)
+      .then((loaded) => {
+        if (!cancelled && loaded) setEmbedderReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiEnabled, embedderReady]);
 
   useEffect(() => {
     const q = query.trim();

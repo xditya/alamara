@@ -14,6 +14,14 @@ export async function loadEmbedder(_onProgress?: (progress: number) => void): Pr
   throw new Error('On-device AI is not available on web');
 }
 
+export async function isModelDownloaded(): Promise<boolean> {
+  return false;
+}
+
+export async function warmUpEmbedder(): Promise<boolean> {
+  return false;
+}
+
 export function clearEmbeddingCache(): void {
   // no-op
 }

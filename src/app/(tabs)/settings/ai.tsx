@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { SettingGroup } from '@/components/settings/setting-group';
@@ -12,7 +12,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useToast } from '@/components/ui/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { setAiEnabled, usePreferences } from '@/lib/theme-store';
-import { clearEmbeddingCache, isEmbedderReady, loadEmbedder } from '@/services/ai';
+import { clearEmbeddingCache, isEmbedderReady, loadEmbedder, warmUpEmbedder } from '@/services/ai';
 
 export default function AiSettings() {
   const theme = useTheme();
@@ -21,11 +21,28 @@ export default function AiSettings() {
 
   const [ready, setReady] = useState(isEmbedderReady());
   const [progress, setProgress] = useState<number | null>(null);
+  // The model outlives the JS context, the loaded module does not. On mount,
+  // reload an already-downloaded model instead of offering to download it again.
+  const [preparing, setPreparing] = useState(!isEmbedderReady());
 
   const downloading = progress !== null;
 
+  useEffect(() => {
+    let cancelled = false;
+    void warmUpEmbedder()
+      .catch(() => false)
+      .then((loaded) => {
+        if (cancelled) return;
+        if (loaded) setReady(true);
+        setPreparing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const download = async () => {
-    if (downloading || ready) return;
+    if (downloading || ready || preparing) return;
     setProgress(0);
     try {
       await loadEmbedder((p) => setProgress(p));
@@ -55,7 +72,9 @@ export default function AiSettings() {
     ? 'Ready'
     : downloading
       ? `Downloading ${Math.round((progress ?? 0) * 100)}%`
-      : '~90 MB · not downloaded';
+      : preparing
+        ? 'Checking…'
+        : '~90 MB · not downloaded';
 
   return (
     <SettingsScreen title="AI & Indexing" back>
@@ -82,7 +101,9 @@ export default function AiSettings() {
           icon="search"
           label="Semantic search"
           subtitle={ready ? 'Understand queries, not only exact text' : 'Downloads a ~90 MB model on first use'}
-          value={aiEnabled && ready}
+          // Stay on while the already-downloaded model is being reloaded, so the
+          // switch doesn't appear to turn itself off on every app launch.
+          value={aiEnabled && (ready || preparing)}
           onValueChange={onToggleSemantic}
         />
       </SettingGroup>
@@ -96,10 +117,18 @@ export default function AiSettings() {
       </SettingGroup>
 
       <Button
-        title={ready ? 'Re-index all documents' : downloading ? 'Downloading…' : 'Download & enable'}
+        title={
+          ready
+            ? 'Re-index all documents'
+            : downloading
+              ? 'Downloading…'
+              : preparing
+                ? 'Checking…'
+                : 'Download & enable'
+        }
         icon={ready ? 'refresh' : 'download'}
         variant={ready ? 'secondary' : 'primary'}
-        loading={downloading}
+        loading={downloading || preparing}
         onPress={
           ready
             ? () => {

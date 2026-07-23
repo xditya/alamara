@@ -16,6 +16,8 @@ import type { Document } from '@/types/models';
 // app's document directory.
 initExecutorch({ resourceFetcher: ExpoResourceFetcher });
 
+const EMBEDDING_MODEL = models.text_embedding.all_minilm_l6_v2();
+
 let modulePromise: Promise<TextEmbeddingsModule> | null = null;
 let ready = false;
 
@@ -23,10 +25,60 @@ export function isEmbedderReady(): boolean {
   return ready;
 }
 
+/**
+ * Mirrors `ResourceFetcherUtils.getFilenameFromUri` in react-native-executorch:
+ * drop the scheme, drop the fragment, then replace every character outside
+ * [a-zA-Z0-9._-] with an underscore. So the file on disk is the mangled *whole*
+ * URL, not just its last path segment.
+ *
+ * We have to reimplement it because the library exposes no public "is this model
+ * already downloaded?" check, and we need one — see `isModelDownloaded`.
+ */
+function downloadedFilename(uri: string): string {
+  return uri
+    .replace(/^https?:\/\//, '')
+    .split('#')[0]
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+/**
+ * True when the model files are already on disk, so loading needs no network.
+ * The fetcher stores them under documentDirectory (not the cache directory), so
+ * they survive restarts and OS cache eviction.
+ */
+export async function isModelDownloaded(): Promise<boolean> {
+  try {
+    const files = await ExpoResourceFetcher.listDownloadedFiles();
+    const present = new Set(files.map((f) => f.split('/').pop() ?? ''));
+    return [EMBEDDING_MODEL.modelSource, EMBEDDING_MODEL.tokenizerSource].every((source) =>
+      present.has(downloadedFilename(source)),
+    );
+  } catch {
+    // The directory does not exist until the first download.
+    return false;
+  }
+}
+
+/**
+ * Loads an already-downloaded model back into memory, and reports whether it
+ * could. `ready` and `modulePromise` are module state, so they are lost on every
+ * app restart even though the model file is still on disk — without warming up,
+ * semantic search silently degrades to keyword-only and the settings screen
+ * offers to "download" a model the device already has.
+ *
+ * Returns false when nothing is downloaded yet, leaving that choice to the user.
+ */
+export async function warmUpEmbedder(): Promise<boolean> {
+  if (ready) return true;
+  if (!(await isModelDownloaded())) return false;
+  await loadEmbedder();
+  return true;
+}
+
 /** Downloads (first run) and loads the embedding model. Safe to call repeatedly. */
 export async function loadEmbedder(onProgress?: (progress: number) => void): Promise<void> {
   if (!modulePromise) {
-    modulePromise = TextEmbeddingsModule.fromModelName(models.text_embedding.all_minilm_l6_v2(), onProgress)
+    modulePromise = TextEmbeddingsModule.fromModelName(EMBEDDING_MODEL, onProgress)
       .then((m) => {
         ready = true;
         return m;
