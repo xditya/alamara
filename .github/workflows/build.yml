@@ -24,9 +24,12 @@ on:
 permissions:
   contents: write
 
+# Runs queue instead of pre-empting each other. These are release builds, not
+# push CI: cancelling in progress throws away a half-hour Xcode archive the
+# moment a second build is dispatched.
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   ios:
