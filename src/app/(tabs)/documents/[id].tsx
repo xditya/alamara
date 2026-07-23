@@ -188,6 +188,21 @@ export default function DocumentDetail() {
                     ) : null}
                   </PressableScale>
 
+                  {/* Re-crop a page that's already saved. */}
+                  {isImage ? (
+                    <PressableScale
+                      onPress={() =>
+                        goWith('/crop', { uri: page.uri, docId: document.id, pageId: page.id })
+                      }
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Crop page ${i + 1}`}
+                      style={[styles.pageCrop, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    >
+                      <Icon name="maximize" size={14} color="primary" />
+                    </PressableScale>
+                  ) : null}
+
                   {/* Only offered while more than one page remains. */}
                   {document.pages.length > 1 ? (
                     <PressableScale
@@ -295,6 +310,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   pageWrap: { position: 'relative' },
+  pageCrop: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 28,
+    height: 28,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   pageDelete: {
     position: 'absolute',
     top: 6,

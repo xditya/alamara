@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CaptureOption } from '@/components/capture/capture-option';
 import { Button } from '@/components/ui/button';
 import { AppText } from '@/components/ui/text';
-import { useToast } from '@/components/ui/toast';
 import { Durations, StaggerMs } from '@/constants/motion';
 import { Radius, Spacing } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
@@ -22,7 +21,6 @@ import { back, replaceWith } from '@/lib/nav';
 
 export default function CaptureScreen() {
   const theme = useTheme();
-  const toast = useToast();
   const reduced = useReducedMotion();
 
   // Hand the picked file(s) to Review (replace so closing Review returns to the tab).
@@ -31,15 +29,8 @@ export default function CaptureScreen() {
     replaceWith('/review', { uris: JSON.stringify(uris), source });
   };
 
-  const scan = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      toast.show('Camera access is needed to scan');
-      return;
-    }
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.85 });
-    if (!res.canceled) toReview(res.assets.map((a) => a.uri), 'Camera');
-  };
+  // Alamara's own camera screen (framing guide, auto-scan, then crop).
+  const scan = () => replaceWith('/camera', {});
 
   const fromPhotos = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -63,7 +54,7 @@ export default function CaptureScreen() {
     {
       icon: 'camera' as const,
       title: 'Scan a document',
-      subtitle: 'Use the camera to capture a page',
+      subtitle: 'Camera with auto edge-detection and crop',
       category: 'id' as const,
       onPress: scan,
     },
