@@ -48,7 +48,11 @@
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": ["image/*", "application/pdf", "text/*"]
+          "androidIntentFilters": ["image/*", "application/pdf", "text/*"],
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsImageWithMaxCount": 10,
+            "NSExtensionActivationSupportsFileWithMaxCount": 10
+          }
         }
       ],
       "expo-secure-store",
