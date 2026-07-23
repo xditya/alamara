@@ -8,7 +8,9 @@
     "scheme": "alamara",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "me.xditya.alamara",
+      "supportsTablet": false
     },
     "android": {
       "adaptiveIcon": {
