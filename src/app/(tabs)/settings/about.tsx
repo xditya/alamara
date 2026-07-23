@@ -1,3 +1,4 @@
+import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 import { StyleSheet, View } from 'react-native';
 
 import { SettingGroup } from '@/components/settings/setting-group';
@@ -10,6 +11,9 @@ import { useToast } from '@/components/ui/toast';
 import { useTheme } from '@/hooks/use-theme';
 
 const VERSION = '1.0.0';
+
+const openUrl = (url: string) =>
+  openBrowserAsync(url, { presentationStyle: WebBrowserPresentationStyle.AUTOMATIC });
 
 export default function AboutSettings() {
   const theme = useTheme();
@@ -43,7 +47,28 @@ export default function AboutSettings() {
         />
       </SettingGroup>
 
-      <SettingGroup title="Legal" index={1}>
+      <SettingGroup
+        title="Developer"
+        footer="Aditya — full-stack developer from Kerala, India. He builds Telegram bots, web apps, and open-source tools with Python, TypeScript, and a love for automation. Alamara is one of them."
+        index={1}
+      >
+        <SettingRow
+          icon="info"
+          label="Portfolio"
+          subtitle="Get to know the person behind Alamara"
+          value="xditya.me"
+          onPress={() => openUrl('https://xditya.me')}
+        />
+        <SettingRow
+          icon="star"
+          label="Source code"
+          subtitle="Alamara is open source — star it on GitHub"
+          value="GitHub"
+          onPress={() => openUrl('https://github.com/xditya/alamara')}
+        />
+      </SettingGroup>
+
+      <SettingGroup title="Legal" index={2}>
         <SettingRow label="Licenses" onPress={() => toast.show('Open-source licenses')} />
       </SettingGroup>
     </SettingsScreen>
