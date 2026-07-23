@@ -5,9 +5,16 @@
  * a query is embedded and ranked by cosine similarity.
  */
 
-import { models, TextEmbeddingsModule } from 'react-native-executorch';
+import { initExecutorch, models, TextEmbeddingsModule } from 'react-native-executorch';
+import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
 
 import type { Document } from '@/types/models';
+
+// ExecuTorch needs a resource-fetcher adapter registered before ANY model can be
+// downloaded or loaded — without it every load fails with "ResourceFetcher adapter
+// is not initialized". The Expo adapter downloads via expo-file-system into the
+// app's document directory.
+initExecutorch({ resourceFetcher: ExpoResourceFetcher });
 
 let modulePromise: Promise<TextEmbeddingsModule> | null = null;
 let ready = false;

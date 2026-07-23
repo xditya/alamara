@@ -33,9 +33,12 @@ export default function AiSettings() {
       setProgress(null);
       setAiEnabled(true);
       toast.show('Semantic search is ready');
-    } catch {
+    } catch (err) {
       setProgress(null);
-      toast.show('Could not download the model');
+      const message = err instanceof Error ? err.message : String(err);
+      // Surface the real reason (network, storage, missing native binding, …).
+      console.error('[Alamara] embedding model load failed:', err);
+      toast.show(message ? `Model failed: ${message}`.slice(0, 90) : 'Could not download the model');
     }
   };
 
