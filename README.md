@@ -74,7 +74,7 @@ wired up versus what's still a placeholder — **read this before trusting it wi
 | Encrypted vault index | ✅ Done | op-sqlite + SQLCipher, key in Keystore/Keychain |
 | Biometric app lock | ✅ Done | expo-local-authentication, fails open with no enrolment |
 | Semantic search (ExecuTorch) | ✅ Done | Opt-in, downloads the model on first use |
-| **Page blob encryption** | ⚠️ **Not yet** | `services/crypto.ts` is still a pass-through stub — scanned images sit unencrypted in app-private storage. This is the biggest gap. |
+| **Page blob encryption** | ⚠️ **Not yet** | Scanned images sit unencrypted in app-private storage — the vault *index* is encrypted, the page files are not. This is the biggest gap. |
 | FTS5 / sqlite-vec index | ⚠️ Partial | Vault index is stored as JSON in an encrypted KV table; the normalised + FTS5 schema is designed but not migrated |
 | Backup / export | 🟨 Basic | Export/import exists; no encrypted archive format yet |
 | iOS | ❓ Untested | Code is platform-agnostic, but only Android has been built and run so far |
@@ -129,10 +129,10 @@ src/
     secure-key.ts       #   master key in Keystore / Keychain
     ocr.ts              #   ML Kit text recognition
     ai.ts               #   ExecuTorch embeddings (opt-in semantic search)
-    biometric.ts crypto.ts db.ts preferences.ts
+    biometric.ts db.ts preferences.ts share.ts
   lib/classify.ts       # deterministic classification + field extraction
   constants/            # theme.ts (semantic tokens), motion.ts, fonts.ts
-  hooks/  types/  mock/
+  hooks/  types/
 ```
 
 Two rules keep it coherent, and they're enforced in review:

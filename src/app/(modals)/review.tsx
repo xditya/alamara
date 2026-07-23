@@ -5,9 +5,9 @@
  * the user set the name, category, fields, tags — plus event date/venue/seat for
  * tickets — before the document is copied into (or updated in) the vault.
  *
- * TODO(native): run services/ocr.recognizeText() over the pages to pre-fill the
- * category and extracted fields automatically (ML Kit / VisionKit — needs a device
- * build). Until then the user categorises manually; everything else is real.
+ * A freshly captured page is auto-indexed on open: `services/ocr.recognizeText()`
+ * (ML Kit, on-device) → `lib/classify` for the category and extracted fields → a
+ * suggested name. Only values the user hasn't already set are filled in.
  */
 
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';

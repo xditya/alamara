@@ -1,17 +1,16 @@
 /**
  * Local, on-device persistence for Alamara.
  *
- * The vault index (documents + tickets) lives as a single JSON file, and each
+ * The vault index (documents + tickets) is held in the SQLCipher-encrypted store
+ * behind `services/sqlite` (unlocked with the Keystore-held master key), and each
  * captured page (image/PDF) is copied out of its temporary picker location into a
  * permanent `blobs/` directory under the app's document directory. Nothing here
  * touches the network — everything stays on the phone.
  *
- * Uses the classic (legacy) expo-file-system functional API, which is fully
- * supported inside Expo Go. (The new class-based File/Directory API needs native
- * support that the Expo Go SDK 57 binary doesn't expose — its constructor throws
- * "this.validatePath is undefined".) During the native build phase this whole
- * layer is swapped for op-sqlite (SQLCipher + FTS5) + AES-GCM blob encryption,
- * without changing the `db` surface that feature code consumes.
+ * Blob file handling uses the classic (legacy) expo-file-system functional API.
+ * Page blobs themselves are not yet encrypted at rest — they sit in app-private
+ * storage — so AES-GCM blob encryption is still an open item. Neither change would
+ * alter the `db` surface that feature code consumes.
  */
 
 import {

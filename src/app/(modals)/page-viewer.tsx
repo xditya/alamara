@@ -1,9 +1,7 @@
 /**
- * Page viewer — a full-screen look at a captured page. Page images are stored as
- * encrypted blobs and decrypted to cache on device; here (no native) we render a
- * large category-tinted placeholder in their place.
- *
- * TODO(device): services/crypto.decryptToCache() → <Image> of the real page.
+ * Page viewer — a full-screen look at a captured page. Page blobs live in
+ * app-private storage, so the real image is rendered straight from its file URI.
+ * Non-image pages (e.g. PDFs) fall back to a large category-tinted placeholder.
  */
 
 import { Image } from 'expo-image';

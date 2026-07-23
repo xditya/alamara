@@ -1,8 +1,8 @@
 /**
- * Data access facade. Persists to on-device storage (`services/storage`) — a JSON
- * vault index plus copied page-blob files. Feature code must only use these
- * functions; the storage backend swaps to op-sqlite (SQLCipher + FTS5) during the
- * native build phase without changing this surface.
+ * Data access facade. Persists to on-device storage (`services/storage`) — the
+ * SQLCipher-encrypted vault index (via `services/sqlite`) plus copied page-blob
+ * files. Feature code must only use these functions; the storage backend can
+ * evolve without changing this surface.
  */
 
 import * as storage from '@/services/storage';
