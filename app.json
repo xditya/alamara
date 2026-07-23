@@ -8,7 +8,6 @@
     "scheme": "alamara",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "bundleIdentifier": "me.xditya.alamara",
       "supportsTablet": false,
       "deploymentTarget": "17.0"
