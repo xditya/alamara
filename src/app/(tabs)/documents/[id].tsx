@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -21,7 +21,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDocument } from '@/hooks/use-documents';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
-import { back, goWith } from '@/lib/nav';
+import { backTo, goWith } from '@/lib/nav';
 import * as db from '@/services/db';
 import { CATEGORY_LABELS } from '@/types/models';
 
@@ -37,7 +37,7 @@ export default function DocumentDetail() {
 
   const BackButton = (
     <PressableScale
-      onPress={back}
+      onPress={() => backTo('/documents')}
       accessibilityRole="button"
       accessibilityLabel="Go back"
       style={[styles.iconBtn, { backgroundColor: theme.surface, borderColor: theme.border }, CardShadow[scheme]]}
@@ -64,7 +64,7 @@ export default function DocumentDetail() {
             title="Document not found"
             message="This document may have been deleted."
             actionLabel="Go back"
-            onAction={back}
+            onAction={() => backTo('/documents')}
           />
         </View>
       </SafeAreaView>
@@ -107,10 +107,30 @@ export default function DocumentDetail() {
     refresh();
   };
 
+  // A document must always keep at least one page — the last one can't be removed.
+  const confirmRemovePage = (pageId: string, index: number) => {
+    if (document.pages.length <= 1) {
+      toast.show('A document needs at least one page');
+      return;
+    }
+    Alert.alert(`Delete page ${index + 1}?`, 'The page and its image are removed from this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const ok = await db.removePage(document.id, pageId);
+          toast.show(ok ? 'Page deleted' : 'A document needs at least one page');
+          refresh();
+        },
+      },
+    ]);
+  };
+
   const onDelete = async () => {
     await db.deleteDocument(document.id);
     toast.show('Deleted');
-    back();
+    backTo('/documents');
   };
 
   return (
@@ -144,29 +164,43 @@ export default function DocumentDetail() {
             {document.pages.map((page, i) => {
               const isImage = !!page.uri && !page.uri.toLowerCase().endsWith('.pdf');
               return (
-                <PressableScale
-                  key={page.id}
-                  onPress={() =>
-                    goWith('/page-viewer', {
-                      uri: page.uri,
-                      name: document.name,
-                      page: String(i + 1),
-                      category: document.category,
-                    })
-                  }
-                  style={[styles.pageTile, { backgroundColor: c.tint, borderColor: theme.border }]}
-                >
-                  {isImage ? (
-                    <Image source={{ uri: page.uri }} style={styles.pageImage} contentFit="cover" transition={150} />
-                  ) : (
-                    <Icon name="file" size={30} color={c.fg} />
-                  )}
-                  {page.side ? (
-                    <AppText variant="caption" style={[styles.pageSide, { color: c.fg }]}>
-                      {page.side === 'front' ? 'Front' : 'Back'}
-                    </AppText>
+                <View key={page.id} style={styles.pageWrap}>
+                  <PressableScale
+                    onPress={() =>
+                      goWith('/page-viewer', {
+                        uri: page.uri,
+                        name: document.name,
+                        page: String(i + 1),
+                        category: document.category,
+                      })
+                    }
+                    style={[styles.pageTile, { backgroundColor: c.tint, borderColor: theme.border }]}
+                  >
+                    {isImage ? (
+                      <Image source={{ uri: page.uri }} style={styles.pageImage} contentFit="cover" transition={150} />
+                    ) : (
+                      <Icon name="file" size={30} color={c.fg} />
+                    )}
+                    {page.side ? (
+                      <AppText variant="caption" style={[styles.pageSide, { color: c.fg }]}>
+                        {page.side === 'front' ? 'Front' : 'Back'}
+                      </AppText>
+                    ) : null}
+                  </PressableScale>
+
+                  {/* Only offered while more than one page remains. */}
+                  {document.pages.length > 1 ? (
+                    <PressableScale
+                      onPress={() => confirmRemovePage(page.id, i)}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete page ${i + 1}`}
+                      style={[styles.pageDelete, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    >
+                      <Icon name="close" size={14} color="danger" />
+                    </PressableScale>
                   ) : null}
-                </PressableScale>
+                </View>
               );
             })}
           </ScrollView>
@@ -259,6 +293,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.sm,
     overflow: 'hidden',
+  },
+  pageWrap: { position: 'relative' },
+  pageDelete: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 28,
+    height: 28,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pageImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
   pageSide: {

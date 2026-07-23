@@ -75,6 +75,40 @@ export async function saveTicket(ticket: Ticket): Promise<Ticket> {
   return ticket;
 }
 
+/**
+ * Removes one page from a document and deletes its file. A document must always
+ * keep at least one page, so removing the last one is refused (returns false).
+ */
+export async function removePage(docId: string, pageId: string): Promise<boolean> {
+  const data = await storage.readVault();
+  const doc = data.documents.find((d) => d.id === docId);
+  if (!doc) return false;
+  if (doc.pages.length <= 1) return false; // never leave a document with no pages
+  const page = doc.pages.find((p) => p.id === pageId);
+  if (!page) return false;
+  doc.pages = doc.pages.filter((p) => p.id !== pageId);
+  doc.updatedAt = Date.now();
+  await storage.writeVault(data);
+  if (page.uri) await storage.deleteBlobs([page.uri]);
+  return true;
+}
+
+/** Replaces a page's image (used after cropping/editing) and returns the new URI. */
+export async function replacePage(docId: string, pageId: string, newUri: string): Promise<boolean> {
+  const data = await storage.readVault();
+  const doc = data.documents.find((d) => d.id === docId);
+  if (!doc) return false;
+  const page = doc.pages.find((p) => p.id === pageId);
+  if (!page) return false;
+  const stored = await storage.persistBlob(newUri, `${docId}-${pageId}-${Date.now()}`);
+  const old = page.uri;
+  page.uri = stored;
+  doc.updatedAt = Date.now();
+  await storage.writeVault(data);
+  if (old && old !== stored) await storage.deleteBlobs([old]);
+  return true;
+}
+
 /** Removes a tag from every document that carries it. */
 export async function removeTagEverywhere(tag: string): Promise<void> {
   const data = await storage.readVault();

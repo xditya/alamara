@@ -25,7 +25,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useTheme } from '@/hooks/use-theme';
 import { useTicket } from '@/hooks/use-tickets';
-import { back } from '@/lib/nav';
+import { backTo } from '@/lib/nav';
 import * as db from '@/services/db';
 import { useLocalSearchParams } from 'expo-router';
 
@@ -94,7 +94,7 @@ export default function TicketGlanceScreen() {
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.bgGrouped }]}>
       <View style={styles.headerBar}>
         <PressableScale
-          onPress={back}
+          onPress={() => backTo('/wallet')}
           hitSlop={10}
           style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
@@ -117,7 +117,7 @@ export default function TicketGlanceScreen() {
             title="Ticket not found"
             message="This ticket may have been removed."
             actionLabel="Go back"
-            onAction={back}
+            onAction={() => backTo('/wallet')}
           />
         </View>
       ) : (
@@ -171,7 +171,7 @@ export default function TicketGlanceScreen() {
                 if (ticket.status === 'archived') return;
                 await db.saveTicket({ ...ticket, status: 'archived' });
                 toast.show('Ticket archived');
-                back();
+                backTo('/wallet');
               }}
             />
           </View>
