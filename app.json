@@ -10,7 +10,8 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "me.xditya.alamara",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "deploymentTarget": "17.0"
     },
     "android": {
       "adaptiveIcon": {

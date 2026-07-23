@@ -1,0 +1,226 @@
+name: Build App
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Which platform(s) to build
+        type: choice
+        default: both
+        options:
+          - both
+          - ios
+          - android
+      tag:
+        description: Release tag (blank = build-<run number>)
+        type: string
+        default: ""
+      prerelease:
+        description: Mark the release as a pre-release
+        type: boolean
+        default: true
+
+# Needed by the release job to create tags and upload assets.
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'ios' }}
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Select Xcode
+        # app.json ships an Icon Composer asset (assets/expo.icon), which needs
+        # a recent Xcode to compile. Pin to the newest stable on the runner.
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache CocoaPods downloads
+        # react-native-executorch and op-sqlite pull large prebuilt xcframeworks;
+        # caching the pod download cache saves several minutes per run.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-pods-
+
+      - name: Generate iOS project (Expo Prebuild)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+
+      - name: Resolve Xcode scheme
+        id: scheme
+        # Expo names the workspace after `expo.name` in app.json (Alamara ->
+        # Alamara.xcworkspace). Derive it so a rename doesn't break the build.
+        run: |
+          WORKSPACE=$(ls -d ios/*.xcworkspace | head -n 1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+
+      - name: Build Unsigned Archive
+        run: |
+          xcodebuild \
+            -workspace "${{ steps.scheme.outputs.workspace }}" \
+            -scheme "${{ steps.scheme.outputs.scheme }}" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/unsigned.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            archive
+
+      - name: Package into .ipa
+        run: |
+          APP=$(ls -d build/unsigned.xcarchive/Products/Applications/*.app | head -n 1)
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr Alamara-ios-unsigned.ipa Payload/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alamara-ios
+          path: Alamara-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'android' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Android project (Expo Prebuild)
+        # The with-openssl-jnilibs plugin runs here, copying the committed
+        # libcrypto/libssl into jniLibs so op-sqlite's SQLCipher can link.
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build Release APK
+        # The Expo template signs the release build with the debug keystore, so
+        # this needs no secrets. The APK is sideload-ready, not Play-Store-ready.
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Collect APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk Alamara-android.apk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alamara-android
+          path: Alamara-android.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    # Runs if at least one platform built. `always()` is required so that a
+    # skipped platform (single-platform run) doesn't skip the release too.
+    needs: [ios, android]
+    if: ${{ always() && (needs.ios.result == 'success' || needs.android.result == 'success') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: alamara-*
+          merge-multiple: true
+
+      - name: Resolve release tag
+        id: meta
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="build-${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'EOF'
+          Automated build.
+
+          - **iOS** `.ipa` is **unsigned** — install it with a tool that re-signs on
+            install (AltStore, Sideloadly), or resign it yourself. It will not
+            install by double-clicking.
+          - **Android** `.apk` is signed with the Expo debug keystore — fine for
+            sideloading, not accepted by the Play Store.
+          EOF
+          echo "" >> notes.md
+          echo "Built from commit ${{ github.sha }}." >> notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ls -lh dist
+
+          PRERELEASE=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "${{ github.sha }}" \
+              --title "Alamara $TAG" \
+              --notes-file notes.md \
+              $PRERELEASE
+          fi
+
+          gh release upload "$TAG" dist/* --clobber
+          echo "Published $(gh release view "$TAG" --json url --jq .url)"
