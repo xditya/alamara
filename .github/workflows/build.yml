@@ -217,24 +217,31 @@ jobs:
 
       - name: Publish GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Falls back to a PAT when the repo's built-in token is read-only.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
           ls -lh dist
 
-          PRERELEASE=""
-          if [ "${{ inputs.prerelease }}" = "true" ]; then
-            PRERELEASE="--prerelease"
+          FLAGS=(--title "Alamara $TAG" --notes-file notes.md --target "$GITHUB_SHA")
+          if [ "$PRERELEASE" = "true" ]; then
+            FLAGS+=(--prerelease)
           fi
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --target "${{ github.sha }}" \
-              --title "Alamara $TAG" \
-              --notes-file notes.md \
-              $PRERELEASE
+            if ! gh release create "$TAG" "${FLAGS[@]}"; then
+              echo "::error::Could not create release $TAG."
+              echo "If the error above is HTTP 403 'Resource not accessible by integration',"
+              echo "the workflow token is read-only. Fix it in either of these ways:"
+              echo "  1. Settings -> Actions -> General -> Workflow permissions ->"
+              echo "     select 'Read and write permissions' -> Save."
+              echo "  2. Create a PAT with the 'contents' write scope and save it as"
+              echo "     the repository secret RELEASE_TOKEN."
+              exit 1
+            fi
           fi
 
           gh release upload "$TAG" dist/* --clobber
