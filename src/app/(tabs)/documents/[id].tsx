@@ -114,9 +114,15 @@ export default function DocumentDetail() {
         onPress: () => void runShare(() => share.shareDocumentAsPdf(document), 'Making PDF…'),
       },
       {
-        // Never silently drop pages — say so when only the first one goes out.
-        text: multi ? 'Image (first page only)' : 'Image',
-        onPress: () => void runShare(() => share.shareDocumentPage(document, images[0]), 'Preparing…'),
+        text: multi ? `Images (all ${images.length})` : 'Image',
+        onPress: () =>
+          void runShare(
+            () =>
+              multi
+                ? share.shareDocumentImages(document)
+                : share.shareDocumentPage(document, images[0]),
+            'Preparing…',
+          ),
       },
       { text: 'Cancel', style: 'cancel' },
     ];

@@ -5,9 +5,14 @@
  *  1. `expo-sharing` has no "filename" option — the receiving app shows whatever
  *     the file on disk is called. Page blobs are named `<docId>-0`, so every share
  *     must be staged into the cache directory under `<name>_Alamara.<ext>` first.
- *  2. There is no way to attach a caption to a file share on Android, so the
- *     "shared from Alamara" line lives inside the PDF (and in the text fallback)
- *     rather than in a message that would silently get dropped.
+ *  2. `expo-sharing.shareAsync()` takes exactly ONE uri, so it cannot hand over a
+ *     multi-page document as images at all. `react-native-share` wraps Android's
+ *     ACTION_SEND_MULTIPLE and accepts `urls: string[]`, so that is what file
+ *     shares go through — with expo-sharing kept as a single-file fallback.
+ *  3. A caption alongside attachments is best-effort: it is passed as the share
+ *     message, but plenty of targets (WhatsApp among them) drop EXTRA_TEXT when
+ *     files are attached. The "shared from Alamara" line therefore also lives
+ *     *inside* the PDF, which no receiving app can strip.
  */
 
 import {
@@ -45,6 +50,21 @@ function loadPrint(): PrintModule {
   }
 }
 
+/** Multi-file share sheet. Loaded lazily for the same reason as expo-print above. */
+type ShareSheet = {
+  open(options: { urls?: string[]; message?: string; title?: string; failOnCancel?: boolean }): Promise<unknown>;
+};
+
+function loadShareSheet(): ShareSheet | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- deferring the load IS the fix
+    const mod = require('react-native-share') as { default?: ShareSheet } & ShareSheet;
+    return mod.default ?? mod;
+  } catch {
+    return null; // stale build — caller degrades to expo-sharing (single file only)
+  }
+}
+
 const IMAGE_MIME: Record<string, { mime: string; uti: string }> = {
   jpg: { mime: 'image/jpeg', uti: 'public.jpeg' },
   jpeg: { mime: 'image/jpeg', uti: 'public.jpeg' },
@@ -79,6 +99,12 @@ export function shareFileName(docName: string, ext: string): string {
   return `${sanitizeFileName(docName)}_Alamara.${ext}`;
 }
 
+/** Page 2 of 3 → `PAN Card_Alamara_2.jpg`; a lone page keeps the unnumbered name. */
+export function pageFileName(docName: string, ext: string, index: number, total: number): string {
+  const base = sanitizeFileName(docName);
+  return total > 1 ? `${base}_Alamara_${index + 1}.${ext}` : `${base}_Alamara.${ext}`;
+}
+
 /** Pages that actually hold an image we can render or hand over. */
 export function imagePagesOf(document: Document): DocPage[] {
   return document.pages.filter((p) => !!p.uri && extensionOf(p.uri) !== 'pdf');
@@ -102,9 +128,23 @@ async function stage(sourceUri: string, filename: string): Promise<string> {
   return to;
 }
 
-async function share(uri: string, mime: string, uti: string, dialogTitle: string): Promise<void> {
+/**
+ * Hands one or more files to the OS share sheet. Goes through react-native-share so
+ * multi-page documents can be sent as separate images in one go; falls back to
+ * expo-sharing (single file) on a build that predates the dependency.
+ */
+async function shareFiles(uris: string[], mime: string, uti: string, title: string): Promise<void> {
+  if (uris.length === 0) throw new Error('Nothing to share');
+
+  const sheet = loadShareSheet();
+  if (sheet) {
+    // Dismissing the sheet is a normal outcome, not an error worth surfacing.
+    await sheet.open({ urls: uris, message: PROMO_LINE, title, failOnCancel: false });
+    return;
+  }
+
   if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device');
-  await Sharing.shareAsync(uri, { mimeType: mime, UTI: uti, dialogTitle });
+  await Sharing.shareAsync(uris[0], { mimeType: mime, UTI: uti, dialogTitle: title });
 }
 
 /**
@@ -152,7 +192,7 @@ export async function shareDocumentAsPdf(document: Document): Promise<void> {
   const { uri } = await print.printToFileAsync({ html });
   const staged = await stage(uri, shareFileName(document.name, 'pdf'));
   await deleteAsync(uri, { idempotent: true }); // the render temp file is now a duplicate
-  await share(staged, 'application/pdf', 'com.adobe.pdf', `Share ${document.name}`);
+  await shareFiles([staged], 'application/pdf', 'com.adobe.pdf', `Share ${document.name}`);
 }
 
 /** Shares a single page file as-is (image or an already-PDF page), correctly named. */
@@ -160,7 +200,26 @@ export async function shareDocumentPage(document: Document, page: DocPage): Prom
   const ext = extensionOf(page.uri);
   const kind = IMAGE_MIME[ext] ?? { mime: 'image/jpeg', uti: 'public.image' };
   const staged = await stage(page.uri, shareFileName(document.name, ext));
-  await share(staged, kind.mime, kind.uti, `Share ${document.name}`);
+  await shareFiles([staged], kind.mime, kind.uti, `Share ${document.name}`);
+}
+
+/**
+ * Shares EVERY image page in one go, each file named `<doc>_Alamara_<n>.<ext>`.
+ * This is the reason react-native-share is here at all — expo-sharing can only
+ * ever hand over a single uri, which is why this used to be "first page only".
+ */
+export async function shareDocumentImages(document: Document): Promise<void> {
+  const pages = imagePagesOf(document);
+  if (pages.length === 0) throw new Error('This document has no images to share');
+
+  const staged: string[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    const ext = extensionOf(pages[i].uri);
+    staged.push(await stage(pages[i].uri, pageFileName(document.name, ext, i, pages.length)));
+  }
+
+  const kind = IMAGE_MIME[extensionOf(pages[0].uri)] ?? { mime: 'image/jpeg', uti: 'public.image' };
+  await shareFiles(staged, kind.mime, kind.uti, `Share ${document.name}`);
 }
 
 /** Fallback for details-only documents: the fields as plain text, promo included. */
