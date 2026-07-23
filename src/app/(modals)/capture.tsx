@@ -84,7 +84,7 @@ export default function CaptureScreen() {
   ];
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
       <View style={styles.grabberWrap}>
         <View style={[styles.grabber, { backgroundColor: theme.border }]} />
       </View>

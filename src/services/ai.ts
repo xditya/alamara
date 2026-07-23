@@ -5,7 +5,7 @@
  * a query is embedded and ranked by cosine similarity.
  */
 
-import { ALL_MINILM_L6_V2, TextEmbeddingsModule } from 'react-native-executorch';
+import { models, TextEmbeddingsModule } from 'react-native-executorch';
 
 import type { Document } from '@/types/models';
 
@@ -19,7 +19,7 @@ export function isEmbedderReady(): boolean {
 /** Downloads (first run) and loads the embedding model. Safe to call repeatedly. */
 export async function loadEmbedder(onProgress?: (progress: number) => void): Promise<void> {
   if (!modulePromise) {
-    modulePromise = TextEmbeddingsModule.fromModelName(ALL_MINILM_L6_V2, onProgress)
+    modulePromise = TextEmbeddingsModule.fromModelName(models.text_embedding.all_minilm_l6_v2(), onProgress)
       .then((m) => {
         ready = true;
         return m;
