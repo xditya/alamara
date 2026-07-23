@@ -50,12 +50,6 @@
         }
       ],
       "expo-secure-store",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Alamara uses the camera to scan your documents."
-        }
-      ],
       "react-native-document-scanner-plugin",
       "./plugins/with-openssl-jnilibs"
     ],

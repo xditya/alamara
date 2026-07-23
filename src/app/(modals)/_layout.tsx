@@ -3,8 +3,7 @@ import { Stack } from 'expo-router';
 export default function ModalsLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {/* Camera and crop are full-screen experiences, not card modals */}
-      <Stack.Screen name="camera" options={{ presentation: 'fullScreenModal' }} />
+      {/* Scanning is handed to the OS scanner; crop is our own full-screen stage */}
       <Stack.Screen name="crop" options={{ presentation: 'fullScreenModal' }} />
     </Stack>
   );

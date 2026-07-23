@@ -2,14 +2,13 @@
  * Crop — free-form rectangular cropping with draggable corners AND edges.
  *
  * The aspect ratio is never locked: every corner and edge moves independently,
- * clamped to the image bounds and a minimum size. Used right after capture (the
- * ML Kit auto-scan pre-crops, this refines it) and again later to re-crop a page
- * that's already saved. Leaving with unsaved changes asks first.
+ * clamped to the image bounds and a minimum size. Fresh scans arrive already cropped
+ * by the OS scanner, so this screen exists to re-crop a page that is *already saved*,
+ * reached from a document's page menu. Leaving with unsaved changes asks first.
  *
  * Params:
  *  - uri             the image to crop (required)
- *  - docId, pageId   present when re-cropping a saved page (replaces it in place)
- *  - source          label carried through to Review for a fresh capture
+ *  - docId, pageId   the saved page this replaces in place (required)
  */
 
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
@@ -26,7 +25,7 @@ import { Icon } from '@/components/ui/icon';
 import { AppText } from '@/components/ui/text';
 import { useToast } from '@/components/ui/toast';
 import { Radius, Spacing } from '@/constants/theme';
-import { back, replaceWith } from '@/lib/nav';
+import { back } from '@/lib/nav';
 import * as db from '@/services/db';
 
 // The crop surface is a deliberately dark stage so the photo reads clearly —
@@ -40,9 +39,10 @@ const MIN_SIZE = 60; // smallest crop box, in on-screen points
 const HANDLE = 28;
 
 export default function CropScreen() {
-  const params = useLocalSearchParams<{ uri?: string; docId?: string; pageId?: string; source?: string }>();
+  const params = useLocalSearchParams<{ uri?: string; docId?: string; pageId?: string }>();
   const uri = params.uri ?? '';
-  const isEditingPage = !!(params.docId && params.pageId);
+  const docId = params.docId ?? '';
+  const pageId = params.pageId ?? '';
   const toast = useToast();
 
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
@@ -60,6 +60,18 @@ export default function CropScreen() {
   const bt = useSharedValue(0);
   const br = useSharedValue(0);
   const bb = useSharedValue(0);
+  /**
+   * Where the box was when the current drag started. These have to be shared values,
+   * not plain `let`s in the enclosing scope: `onStart` and `onUpdate` are compiled into
+   * separate worklets, each of which captures its own copy of any outer variable it
+   * reads. Anything `onStart` assigned to a `let` would therefore still read as 0 in
+   * `onUpdate`, so every drag measured its delta from the origin and slammed the crop
+   * box into the top-left corner.
+   */
+  const s0l = useSharedValue(0);
+  const s0t = useSharedValue(0);
+  const s0r = useSharedValue(0);
+  const s0b = useSharedValue(0);
 
   useEffect(() => {
     if (!uri) return;
@@ -99,56 +111,52 @@ export default function CropScreen() {
 
   // --- gestures -------------------------------------------------------------
   // Body: move the whole box, keeping it inside the image.
-  const bodyPan = useMemo(() => {
-    let sl = 0;
-    let st = 0;
-    let sr = 0;
-    let sb = 0;
-    return Gesture.Pan()
-      .onStart(() => {
-        sl = l.value;
-        st = t.value;
-        sr = r.value;
-        sb = b.value;
-      })
-      .onUpdate((e) => {
-        const w = sr - sl;
-        const h = sb - st;
-        let nx = sl + e.translationX;
-        let ny = st + e.translationY;
-        nx = Math.max(bl.value, Math.min(nx, br.value - w));
-        ny = Math.max(bt.value, Math.min(ny, bb.value - h));
-        l.value = nx;
-        t.value = ny;
-        r.value = nx + w;
-        b.value = ny + h;
-      })
-      .onEnd(() => runOnJS(markDirty)());
-  }, [b, bb, bl, br, bt, l, markDirty, r, t]);
-
-  /** Builds a pan gesture that moves the given edges. */
-  const edgeGesture = useCallback(
-    (moveLeft: boolean, moveTop: boolean, moveRight: boolean, moveBottom: boolean) => {
-      let sl = 0;
-      let st = 0;
-      let sr = 0;
-      let sb = 0;
-      return Gesture.Pan()
+  const bodyPan = useMemo(
+    () =>
+      Gesture.Pan()
         .onStart(() => {
-          sl = l.value;
-          st = t.value;
-          sr = r.value;
-          sb = b.value;
+          s0l.value = l.value;
+          s0t.value = t.value;
+          s0r.value = r.value;
+          s0b.value = b.value;
         })
         .onUpdate((e) => {
-          if (moveLeft) l.value = Math.max(bl.value, Math.min(sl + e.translationX, r.value - MIN_SIZE));
-          if (moveTop) t.value = Math.max(bt.value, Math.min(st + e.translationY, b.value - MIN_SIZE));
-          if (moveRight) r.value = Math.min(br.value, Math.max(sr + e.translationX, l.value + MIN_SIZE));
-          if (moveBottom) b.value = Math.min(bb.value, Math.max(sb + e.translationY, t.value + MIN_SIZE));
+          const w = s0r.value - s0l.value;
+          const h = s0b.value - s0t.value;
+          const nx = Math.max(bl.value, Math.min(s0l.value + e.translationX, br.value - w));
+          const ny = Math.max(bt.value, Math.min(s0t.value + e.translationY, bb.value - h));
+          l.value = nx;
+          t.value = ny;
+          r.value = nx + w;
+          b.value = ny + h;
         })
-        .onEnd(() => runOnJS(markDirty)());
-    },
-    [b, bb, bl, br, bt, l, markDirty, r, t],
+        .onEnd(() => runOnJS(markDirty)()),
+    [b, bb, bl, br, bt, l, markDirty, r, s0b, s0l, s0r, s0t, t],
+  );
+
+  /**
+   * Builds a pan gesture that moves the given edges. `blocksExternalGesture(bodyPan)`
+   * makes the body pan wait for this one: the handles sit inside the box, so without
+   * it a corner drag would also drag the whole box.
+   */
+  const edgeGesture = useCallback(
+    (moveLeft: boolean, moveTop: boolean, moveRight: boolean, moveBottom: boolean) =>
+      Gesture.Pan()
+        .blocksExternalGesture(bodyPan)
+        .onStart(() => {
+          s0l.value = l.value;
+          s0t.value = t.value;
+          s0r.value = r.value;
+          s0b.value = b.value;
+        })
+        .onUpdate((e) => {
+          if (moveLeft) l.value = Math.max(bl.value, Math.min(s0l.value + e.translationX, r.value - MIN_SIZE));
+          if (moveTop) t.value = Math.max(bt.value, Math.min(s0t.value + e.translationY, b.value - MIN_SIZE));
+          if (moveRight) r.value = Math.min(br.value, Math.max(s0r.value + e.translationX, l.value + MIN_SIZE));
+          if (moveBottom) b.value = Math.min(bb.value, Math.max(s0b.value + e.translationY, t.value + MIN_SIZE));
+        })
+        .onEnd(() => runOnJS(markDirty)()),
+    [b, bb, bl, bodyPan, br, bt, l, markDirty, r, s0b, s0l, s0r, s0t, t],
   );
 
   const gTL = useMemo(() => edgeGesture(true, true, false, false), [edgeGesture]);
@@ -205,14 +213,9 @@ export default function CropScreen() {
     setSaving(true);
     try {
       const cropped = (await applyCrop()) ?? uri;
-      if (isEditingPage) {
-        await db.replacePage(params.docId!, params.pageId!, cropped);
-        toast.show('Page updated');
-        back();
-      } else {
-        // Fresh capture — hand the cropped page to Review to be saved.
-        replaceWith('/review', { uris: JSON.stringify([cropped]), source: params.source || 'Scan' });
-      }
+      await db.replacePage(docId, pageId, cropped);
+      toast.show('Page updated');
+      back();
     } catch {
       setSaving(false);
       toast.show('Could not crop this image');
@@ -312,7 +315,7 @@ export default function CropScreen() {
             Drag the corners or edges — the crop is not locked to a shape.
           </AppText>
           <Button
-            title={isEditingPage ? 'Save changes' : 'Use this crop'}
+            title="Save changes"
             icon="check"
             onPress={onSave}
             loading={saving}
