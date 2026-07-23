@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { setAiEnabled, usePreferences } from '@/lib/theme-store';
 import { clearEmbeddingCache, isEmbedderReady, loadEmbedder, warmUpEmbedder } from '@/services/ai';
+import { beginDownloadProgress, endDownloadProgress, updateDownloadProgress } from '@/services/download-progress';
 
 export default function AiSettings() {
   const theme = useTheme();
@@ -44,14 +45,22 @@ export default function AiSettings() {
   const download = async () => {
     if (downloading || ready || preparing) return;
     setProgress(0);
+    // ~90 MB: long enough that the user will often leave the app, so mirror the
+    // progress into the status bar / Live Activity as well as this screen.
+    await beginDownloadProgress();
     try {
-      await loadEmbedder((p) => setProgress(p));
+      await loadEmbedder((p) => {
+        setProgress(p);
+        void updateDownloadProgress(p);
+      });
       setReady(true);
       setProgress(null);
       setAiEnabled(true);
+      await endDownloadProgress('done');
       toast.show('Semantic search is ready');
     } catch (err) {
       setProgress(null);
+      await endDownloadProgress('failed');
       const message = err instanceof Error ? err.message : String(err);
       // Surface the real reason (network, storage, missing native binding, …).
       console.error('[Alamara] embedding model load failed:', err);

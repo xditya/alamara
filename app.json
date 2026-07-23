@@ -20,7 +20,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "me.xditya.alamara"
+      "package": "me.xditya.alamara",
+      "permissions": ["android.permission.POST_NOTIFICATIONS"]
     },
     "web": {
       "output": "static",
@@ -56,6 +57,7 @@
         }
       ],
       "expo-secure-store",
+      "expo-live-activity",
       "react-native-document-scanner-plugin",
       "./plugins/with-openssl-jnilibs"
     ],
